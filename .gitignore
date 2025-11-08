@@ -1,3 +1,6 @@
 /node_exporter-1.9.1.darwin-amd64/*
 /node_exporter-1.9.1.darwin-amd64
-/sync-config.sh
+/node_exporter-1.9.1.darwin-amd64.tar.gz
+/alertmanager-0.27.0.darwin-amd64/*
+/alertmanager-0.27.0.darwin-amd64
+/alertmanager-0.27.0.darwin-amd64.tar.gz

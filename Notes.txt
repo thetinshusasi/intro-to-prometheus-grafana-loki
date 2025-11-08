@@ -103,7 +103,8 @@ Alerts in Prometheus
 Some Awesome Alert configs : https://samber.github.io/awesome-prometheus-alerts/rules#postgresql
 
 
-
+Alert manager
+ For mac system : we had to use Mac port to install alert managers. For some reason there wasn't a homebrew system is available
 
  Implement Side Car patern
 
