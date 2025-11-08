@@ -1,0 +1,11 @@
+groups:
+  - name: Alerts
+    rules:
+      - alert: Is Node Exporter Running
+        expr: up{job="application-server-node-exporter"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Node Exporter is not running"
+          description: "Node Exporter is not running on the server"
