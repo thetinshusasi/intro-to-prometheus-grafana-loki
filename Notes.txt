@@ -1,0 +1,110 @@
+Promethus : Time series db for query, storing data
+Amazon cloud watch : ?
+
+Prometheus  web interface can be accessed using https only. Also grafana also checks for certificates
+
+Exporter : Tool used by Prometheus to pull metrics from various services such as DBs , SQL, IOT device, HAProxy
+            Eg Node exporters
+Push Gateway : Tool used by backend apps to push metrics on to and then it will be pulled
+                 by Prometheus in sometime
+
+Node Exporter is an agent designed to collect hardware and operating system metrics from a server and
+expose them in a format that Prometheus can understand. It's a key component in the Prometheus
+monitoring ecosystem, acting as the bridge between your machine's low-level data and the Prometheus server.
+
+
+How it Works ⚙️
+The Prometheus server uses a pull-based model for monitoring, which means it actively requests metrics from its targets. Node Exporter serves as one of these targets. You install Node Exporter on each server you want to monitor. Once it's running, it exposes a /metrics endpoint, typically on port 9100.
+
+
+When configured, the Prometheus server periodically scrapes this endpoint, collecting a wide range of metrics about the host machine.
+
+Key Functions 📊
+Node Exporter provides a wealth of information about the host it's running on, including:
+
+CPU usage: Tracks total CPU time, as well as time spent in various modes like user, system, and I/O wait.
+
+Memory utilization: Provides details on available memory, free memory, and swap usage.
+
+Disk I/O and space: Monitors disk reads and writes, as well as filesystem capacity and available space.
+
+Network statistics: Collects metrics on network traffic, including bytes sent and received, packet errors, and connection states.
+
+System metrics: Gathers information on system uptime, boot time, and process counts.
+
+- Node Exporter can be extended with pluggable metrics collector
+
+
+
+
+Install Node exporter (provided for linux env )
+ wget https://github.com/prometheus/node_exporter/releases/download/v1.9.1/node_exporter-1.9.1.darwin-amd64.tar.gz
+
+ Node exporter will run on 9100 port
+ Health check link : http://localhost:9100/metrics
+
+
+ Prometheus yml file is located in "/usr/local/etc"
+
+ In Ubuntu, you create or run Node Exporter as a service . Coz if you run in terminal , it will die once you close the terminal
+
+
+ Prmethus Model 
+ - <Meteric Name> {key1=value1,key2=value2...}
+
+ Prometheus Data types
+  - Scalar : float ,string
+  - Instant Vectors : An instant vector is a set of time series, each containing one sample (value) per series at a specific instant in time.
+    Instant vectors are “snapshots” of your system at a single moment in time (the query evaluation time).
+    Eg up
+    might return
+    up{instance="web-1", job="api"}  1
+    up{instance="web-2", job="api"}  0
+    
+        - common examples
+            http_requests_total
+            node_cpu_seconds_total
+            memory_usage_bytes
+  - A range vector is a set of time series where each series includes multiple data points over a time range.
+
+
+  We have binary (< , == , >  etc) and arthematic operateor (+ ,- , /, * ,%,^)
+
+
+Matcher and selectors
+
+   1. A metric selector tells Prometheus which metric name and which series (labels) to fetch.
+
+    Syntax:
+    metric_name{label_matchers}
+    
+   2.  Matchers are conditions inside {} that filter which time series to include based on label names and values.
+
+    Types of matchers:
+        = exact match
+        != not equal
+        =~ regex match
+        !~ regex not match
+
+    Examples:
+    node_cpu_seconds_total{mode="idle"}
+    -> select CPU idle time across all nodes
+
+
+Alerts in Prometheus
+   they are usually kept at 10% of the point of chaos
+   defined in Alerts Definition Yml file
+   written in promql
+   stored in prometheus server
+   Need an alert manager to send notifications or emails in Promethus
+
+
+
+Some Awesome Alert configs : https://samber.github.io/awesome-prometheus-alerts/rules#postgresql
+
+
+
+
+ Implement Side Car patern
+
+
