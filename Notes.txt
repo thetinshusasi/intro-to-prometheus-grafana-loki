@@ -106,6 +106,1211 @@ Some Awesome Alert configs : https://samber.github.io/awesome-prometheus-alerts/
 Alert manager
  For mac system : we had to use Mac port to install alert managers. For some reason there wasn't a homebrew system is available
 
+
+================================================================================
+PROMETHEUS ALERTS, GROUPS, RULES & ALERTMANAGER - COMPREHENSIVE SUMMARY
+================================================================================
+
+═══════════════════════════════════════════════════════════════════════════════
+1. ALERT GROUPS - WHAT THEY ARE
+═══════════════════════════════════════════════════════════════════════════════
+
+What is a Group?
+- A group is a logical container for related alert rules
+- Helps organize alerts by category, priority, or service
+- All rules in a group are evaluated together at the same time
+- Each group can have its own evaluation interval (optional)
+
+Structure:
+  groups:
+    - name: GroupName
+      interval: 30s  # Optional: how often to evaluate this group
+      rules:
+        - alert: AlertName1
+        - alert: AlertName2
+
+═══════════════════════════════════════════════════════════════════════════════
+2. MULTIPLE GROUPS & MULTIPLE RULES
+═══════════════════════════════════════════════════════════════════════════════
+
+Can You Have Multiple Groups?
+✓ YES - You can have multiple groups in the same file or across multiple files
+
+Can You Have Multiple Rules in a Group?
+✓ YES - A group can contain multiple rules
+
+Example:
+  groups:
+    - name: InfrastructureAlerts
+      rules:
+        - alert: NodeExporterDown
+        - alert: HighCPUUsage
+        - alert: DiskFull
+    
+    - name: ApplicationAlerts
+      rules:
+        - alert: ServiceDown
+        - alert: HighLatency
+
+Best Practices:
+- Organize by category (Infrastructure, Application, System Resources)
+- Use different intervals for different priorities
+- Group related alerts together for easier management
+
+═══════════════════════════════════════════════════════════════════════════════
+3. HOW RULES WORK - INDEPENDENT EVALUATION
+═══════════════════════════════════════════════════════════════════════════════
+
+Key Point: Rules are evaluated INDEPENDENTLY
+
+What This Means:
+- Each rule in a group is evaluated separately
+- If one rule fires, it doesn't affect other rules
+- Each rule creates its own alert when it fires
+- Non-firing rules don't create alerts
+
+Example Scenario:
+  Group: SystemAlerts
+    - NodeExporterDown: FIRES → Creates alert → Sent to Alertmanager
+    - HighCPU: Doesn't fire → No alert created
+    - HighMemory: FIRES → Creates alert → Sent to Alertmanager
+
+Result: Two separate alerts are sent to Alertmanager
+
+Important:
+- Rules in a group are only evaluated together (same time)
+- But each rule operates independently
+- Each firing rule creates its own alert
+- Alertmanager receives each alert separately
+
+═══════════════════════════════════════════════════════════════════════════════
+4. ALERTMANAGER - GROUPING & NOTIFICATIONS
+═══════════════════════════════════════════════════════════════════════════════
+
+How Alertmanager Groups Alerts:
+- Alertmanager groups alerts by labels (like alertname, instance, severity)
+- Default grouping: By 'alertname' only
+- Grouping is controlled by 'group_by' setting in route configuration
+
+Default Behavior:
+  group_by: ['alertname']  # Default if not specified
+  - All alerts with same alertname → grouped together
+  - Different alertnames → separate groups
+
+Custom Grouping Options:
+  group_by: ['alertname', 'instance']  # Group by alertname AND instance
+  group_by: ['severity']                # Group by severity only
+  group_by: []                          # No grouping - one email per alert
+
+═══════════════════════════════════════════════════════════════════════════════
+5. EMAIL NOTIFICATIONS - HOW THEY WORK
+═══════════════════════════════════════════════════════════════════════════════
+
+How Many Emails Are Sent?
+- Alertmanager sends ONE EMAIL per alert group (not per alert)
+- Multiple alerts in the same group → ONE email with all alerts listed
+- Different groups → separate emails
+
+Example: 3 identical alerts arrive
+  - NodeExporterDown (server1)
+  - NodeExporterDown (server2)
+  - NodeExporterDown (server3)
+
+Result: 1 EMAIL containing all 3 alerts separately
+
+What's in the Email?
+- Subject: Shows alert name and count [FIRING:3] NodeExporterDown
+- Group labels: Common labels that define the group
+- Individual alerts: Each alert listed separately with:
+  * All its labels (instance, severity, job, etc.)
+  * All its annotations (summary, description)
+  * The metric value
+  * Timestamp
+
+Email Format Example:
+  Subject: [FIRING:3] NodeExporterDown
+  
+  Alert Group: {alertname="NodeExporterDown", severity="critical"}
+  
+  Alerts (3):
+  ─────────────────────────────────────────
+  Alert 1:
+    Labels:
+      - alertname: NodeExporterDown
+      - instance: server1
+      - severity: critical
+    Annotations:
+      - summary: Node Exporter is not running
+      - description: Node Exporter is not running on server1
+    Value: 0
+  
+  Alert 2:
+    Labels:
+      - alertname: NodeExporterDown
+      - instance: server2
+      ...
+  
+  Alert 3:
+    Labels:
+      - alertname: NodeExporterDown
+      - instance: server3
+      ...
+
+Key Points:
+✓ One email per group (not per alert)
+✓ Each alert is listed separately with full details
+✓ You can see which specific instances/servers are affected
+✓ Subject shows count of alerts in the group
+
+═══════════════════════════════════════════════════════════════════════════════
+6. TIMING CONFIGURATION
+═══════════════════════════════════════════════════════════════════════════════
+
+Alertmanager Route Timing Parameters:
+
+group_wait: 10s
+  - How long to wait before sending initial notification for a new group
+  - If multiple alerts arrive within this time, they're grouped together
+  
+group_interval: 10s
+  - How long to wait before sending a new notification about the same group
+  - If new alerts join the group, wait this long before sending update
+  
+repeat_interval: 10m
+  - How long to wait before repeating the same alert notification
+  - Default is 4 hours if not specified
+  - Controls how often you get reminded about the same alert
+
+Example Timeline:
+  T0:  3 alerts arrive → Group starts
+  T10s: group_wait expires → First email sent (3 alerts)
+  T20s: 1 new alert joins group → group_interval starts
+  T30s: group_interval expires → Second email sent (4 alerts)
+  T10m: repeat_interval expires → Third email sent (still 4 alerts)
+
+Best Practices:
+- Critical alerts: Shorter intervals (group_wait: 5s, repeat_interval: 2m)
+- Warning alerts: Longer intervals (group_wait: 30s, repeat_interval: 10m)
+- Info alerts: Even longer intervals (group_wait: 1m, repeat_interval: 30m)
+
+═══════════════════════════════════════════════════════════════════════════════
+7. PURPOSE OF MULTIPLE RULES IN A GROUP
+═══════════════════════════════════════════════════════════════════════════════
+
+Why Have Multiple Rules in a Group?
+
+1. Monitor Different Conditions
+   - Each rule monitors different metrics or conditions
+   - Example: ServiceDown, HighLatency, ErrorRateHigh, DiskFull
+
+2. Different Severity Levels
+   - Different rules can have different severity levels
+   - Example: critical for ServiceDown, warning for HighCPU
+
+3. Different Thresholds for Same Metric
+   - Multiple rules for same metric with different thresholds
+   - Example: CPUWarning (>70%), CPUCritical (>90%)
+
+4. Different Time Windows
+   - Different rules can have different 'for' durations
+   - Example: ServiceDown (30s), ServiceDegraded (5m)
+
+5. Different Routing
+   - Different labels allow different routing in Alertmanager
+   - Example: severity=critical → urgent_receiver, severity=warning → main_receiver
+
+═══════════════════════════════════════════════════════════════════════════════
+8. LABEL EVALUATION - WHEN RULES DON'T FIRE
+═══════════════════════════════════════════════════════════════════════════════
+
+When Expression is FALSE:
+- Alert is in "inactive" state
+- Labels and annotations are NOT evaluated
+- Template variables ({{ $labels.instance }}) are not populated
+- This is by design - Prometheus doesn't waste resources
+
+When Expression is TRUE:
+- Alert is in "pending" or "firing" state
+- Labels and annotations ARE evaluated
+- Template variables are populated with actual values
+
+Key Point: Labels and annotations are only evaluated when the alert is firing
+
+═══════════════════════════════════════════════════════════════════════════════
+9. COMPLETE WORKFLOW EXAMPLE
+═══════════════════════════════════════════════════════════════════════════════
+
+Scenario: System with 3 alerts configured
+
+Step 1: Prometheus Evaluates Rules
+  - Group: SystemAlerts
+    * NodeExporterDown: FIRES (up == 0 for 1m)
+    * HighCPU: Doesn't fire (CPU is 60%)
+    * HighMemory: FIRES (memory is 95%)
+
+Step 2: Prometheus Creates Alerts
+  - Alert 1: NodeExporterDown (severity: critical, instance: server1)
+  - Alert 2: HighMemory (severity: warning, instance: server1)
+  - No alert for HighCPU
+
+Step 3: Alerts Sent to Alertmanager
+  - NodeExporterDown → Alertmanager
+  - HighMemory → Alertmanager
+
+Step 4: Alertmanager Groups Alerts
+  - Group 1: {alertname="NodeExporterDown", severity="critical"}
+    → Routes to urgent_receiver (matches severity=critical)
+  - Group 2: {alertname="HighMemory", severity="warning"}
+    → Routes to main_receiver (default)
+
+Step 5: Email Notifications Sent
+  - Email 1: Critical alert for NodeExporterDown
+  - Email 2: Warning alert for HighMemory
+
+═══════════════════════════════════════════════════════════════════════════════
+10. KEY TAKEAWAYS
+═══════════════════════════════════════════════════════════════════════════════
+
+✓ Rules are evaluated independently - each rule operates separately
+✓ Only firing rules create alerts - non-firing rules don't create alerts
+✓ Each alert is sent individually to Alertmanager
+✓ Alertmanager groups alerts by labels for notifications
+✓ Multiple alerts in same group → ONE email with all alerts listed separately
+✓ Each alert in email shows full details (labels, annotations, values)
+✓ Timing configuration controls how often notifications are sent
+✓ Labels/annotations only evaluated when alert is firing
+✓ Groups help organize related alerts together
+✓ Multiple rules allow monitoring different conditions, severities, thresholds
+
+═══════════════════════════════════════════════════════════════════════════════
+
+═══════════════════════════════════════════════════════════════════════════════
+INHIBITION RULES & SILENCING IN ALERTMANAGER - COMPREHENSIVE SUMMARY
+═══════════════════════════════════════════════════════════════════════════════
+
+═══════════════════════════════════════════════════════════════════════════════
+1. INHIBITION RULES - OVERVIEW
+═══════════════════════════════════════════════════════════════════════════════
+
+What is Inhibition?
+- Inhibition rules suppress certain alerts when other alerts are firing
+- Prevents alert flooding by hiding less important alerts when critical ones fire
+- Example: If "ServerDown" is firing, suppress "HighCPU" alerts for that server
+- Configured in Alertmanager configuration file (alertmanager.yml)
+
+Key Concept:
+  Source Alert (firing) → Inhibits → Target Alerts (suppressed)
+  
+  When source alert fires, target alerts matching the rule are suppressed
+  Target alerts are not sent to receivers while source alert is active
+
+═══════════════════════════════════════════════════════════════════════════════
+2. INHIBITION RULE SYNTAX
+═══════════════════════════════════════════════════════════════════════════════
+
+Basic Structure:
+  inhibit_rules:
+    - source_match:          # Source alert that triggers inhibition
+        label_name: value
+      target_match:          # Target alerts to be suppressed
+        label_name: value
+      equal: ['label1', 'label2']  # Labels that must match between source and target
+
+Components:
+  source_match: Conditions that identify the source alert (the inhibitor)
+  target_match: Conditions that identify target alerts (to be suppressed)
+  equal: Labels that must have the same value in both source and target
+
+═══════════════════════════════════════════════════════════════════════════════
+3. INHIBITION RULE EXAMPLES
+═══════════════════════════════════════════════════════════════════════════════
+
+Example 1: Suppress Warnings When Critical Alerts Fire
+  inhibit_rules:
+    - source_match:
+        severity: critical
+      target_match:
+        severity: warning
+      equal: ['alertname', 'instance']
+  
+  Meaning:
+    - When any critical alert fires
+    - Suppress warning alerts with same alertname and instance
+    - Prevents getting both critical and warning alerts for same issue
+
+Example 2: Suppress All Alerts When Server is Down
+  inhibit_rules:
+    - source_match:
+        alertname: ServerDown
+      target_match:
+        severity: warning
+      equal: ['instance']
+  
+  Meaning:
+    - When ServerDown alert fires for an instance
+    - Suppress all warning alerts for that same instance
+    - Makes sense: if server is down, no point alerting about high CPU
+
+Example 3: Suppress Specific Alerts When Parent Alert Fires
+  inhibit_rules:
+    - source_match:
+        alertname: ClusterDown
+      target_match:
+        alertname: NodeHighCPU
+      equal: ['cluster']
+  
+  Meaning:
+    - When ClusterDown fires
+    - Suppress NodeHighCPU alerts in the same cluster
+    - Cluster-level issue makes node-level alerts irrelevant
+
+Example 4: Multiple Source Conditions
+  inhibit_rules:
+    - source_match:
+        severity: critical
+        component: database
+      target_match:
+        severity: warning
+        component: database
+      equal: ['instance']
+  
+  Meaning:
+    - When critical database alert fires
+    - Suppress warning database alerts for same instance
+
+═══════════════════════════════════════════════════════════════════════════════
+4. HOW INHIBITION WORKS - STEP BY STEP
+═══════════════════════════════════════════════════════════════════════════════
+
+Step 1: Alerts Arrive at Alertmanager
+  - Alert A: ServerDown (severity: critical, instance: server1)
+  - Alert B: HighCPU (severity: warning, instance: server1)
+  - Alert C: HighMemory (severity: warning, instance: server1)
+
+Step 2: Inhibition Rules Evaluated
+  Rule: source_match {severity: critical} → target_match {severity: warning}
+        equal: ['instance']
+  
+  Check:
+    - Source alert (ServerDown) matches source_match? YES (severity: critical)
+    - Target alerts (HighCPU, HighMemory) match target_match? YES (severity: warning)
+    - Equal labels match? YES (instance: server1 for all)
+
+Step 3: Target Alerts Suppressed
+  - Alert A (ServerDown): NOT suppressed (it's the source)
+  - Alert B (HighCPU): SUPPRESSED (matches target_match and equal)
+  - Alert C (HighMemory): SUPPRESSED (matches target_match and equal)
+
+Step 4: Only Source Alert Sent
+  - Only ServerDown alert is sent to receivers
+  - HighCPU and HighMemory are suppressed (not sent)
+
+Step 5: When Source Alert Resolves
+  - ServerDown alert resolves (server comes back up)
+  - Inhibition stops
+  - HighCPU and HighMemory alerts can now fire again if conditions still exist
+
+═══════════════════════════════════════════════════════════════════════════════
+5. SILENCING - OVERVIEW
+═══════════════════════════════════════════════════════════════════════════════
+
+What is Silencing?
+- Silencing is a manual way to suppress alerts temporarily
+- Done through Alertmanager UI or API
+- Useful for planned maintenance, known issues, or testing
+- More flexible than inhibition rules (can be created/removed on demand)
+
+Key Differences from Inhibition:
+  Inhibition Rules:
+    - Automatic (configured in alertmanager.yml)
+    - Based on alert conditions (source/target matching)
+    - Always active when conditions are met
+    - Requires configuration change to modify
+  
+  Silencing:
+    - Manual (created through UI/API)
+    - Based on matchers (label selectors)
+    - Can have time limits (start/end time)
+    - Can be created/removed without config changes
+
+═══════════════════════════════════════════════════════════════════════════════
+6. HOW TO CREATE SILENCES
+═══════════════════════════════════════════════════════════════════════════════
+
+Method 1: Through Alertmanager UI
+  1. Go to http://localhost:9093
+  2. Click on "Silences" tab
+  3. Click "New Silence" button
+  4. Fill in:
+     - Matchers: Label selectors (e.g., alertname="HighCPU", instance="server1")
+     - Starts at: When silence should start
+     - Ends at: When silence should end (or duration)
+     - Created by: Your name/email
+     - Comment: Reason for silence (e.g., "Planned maintenance")
+  5. Click "Create"
+
+Method 2: Through API
+  POST http://localhost:9093/api/v2/silences
+  
+  Body:
+  {
+    "matchers": [
+      {"name": "alertname", "value": "HighCPU", "isRegex": false},
+      {"name": "instance", "value": "server1", "isRegex": false}
+    ],
+    "startsAt": "2025-11-08T10:00:00Z",
+    "endsAt": "2025-11-08T12:00:00Z",
+    "createdBy": "admin@example.com",
+    "comment": "Planned maintenance window"
+  }
+
+Method 3: Using amtool (Command Line)
+  amtool silence add \
+    alertname=HighCPU instance=server1 \
+    --start=2025-11-08T10:00:00Z \
+    --end=2025-11-08T12:00:00Z \
+    --comment="Planned maintenance"
+
+═══════════════════════════════════════════════════════════════════════════════
+7. SILENCE MATCHERS
+═══════════════════════════════════════════════════════════════════════════════
+
+Matchers are label selectors that determine which alerts to silence.
+
+Types of Matchers:
+  1. Exact Match:
+     alertname="HighCPU"
+     instance="server1"
+  
+  2. Regex Match:
+     alertname=~"High.*"
+     instance=~"server[0-9]+"
+  
+  3. Negative Match:
+     alertname!="HighCPU"
+     severity!="info"
+
+Examples:
+  Silence all HighCPU alerts:
+    alertname="HighCPU"
+  
+  Silence all alerts on server1:
+    instance="server1"
+  
+  Silence all critical alerts:
+    severity="critical"
+  
+  Silence HighCPU on specific server:
+    alertname="HighCPU"
+    instance="server1"
+  
+  Silence all alerts matching pattern:
+    alertname=~"High.*"
+    instance=~"server[0-9]+"
+
+═══════════════════════════════════════════════════════════════════════════════
+8. SILENCE DURATION & EXPIRATION
+═══════════════════════════════════════════════════════════════════════════════
+
+Time-Based Silencing:
+  - Silences can have start and end times
+  - Useful for planned maintenance windows
+  - Automatically expires when end time is reached
+
+Example:
+  Starts at: 2025-11-08 10:00:00
+  Ends at:   2025-11-08 12:00:00
+  Duration:  2 hours
+  
+  - Alerts matching the silence are suppressed from 10:00 to 12:00
+  - After 12:00, silence expires and alerts can fire again
+
+Permanent Silences:
+  - Can set end time far in the future
+  - Or use very long duration
+  - Remember to manually expire when no longer needed
+
+Expiring Silences:
+  - Silences automatically expire at their end time
+  - Can also be manually expired through UI/API
+  - Expired silences are kept in history for reference
+
+═══════════════════════════════════════════════════════════════════════════════
+9. INHIBITION VS SILENCING - COMPARISON
+═══════════════════════════════════════════════════════════════════════════════
+
+┌─────────────────────┬──────────────────────┬──────────────────────┐
+│ Feature             │ Inhibition Rules      │ Silencing            │
+├─────────────────────┼──────────────────────┼──────────────────────┤
+│ Configuration       │ alertmanager.yml      │ UI/API/amtool        │
+│ Type                │ Automatic             │ Manual               │
+│ Trigger             │ Based on alert state  │ Based on matchers    │
+│ Duration            │ While source fires    │ Time-based or manual │
+│ Flexibility         │ Fixed rules           │ Very flexible        │
+│ Use Case            │ Alert relationships   │ Maintenance/testing  │
+│ Modification         │ Config change + reload  │ Instant via UI      │
+│ Scope               │ Source→Target logic    │ Any matcher pattern  │
+└─────────────────────┴──────────────────────┴──────────────────────┘
+
+When to Use Inhibition:
+  ✓ Automatic suppression based on alert relationships
+  ✓ Reduce alert noise when critical issues occur
+  ✓ Permanent rules for known alert dependencies
+  ✓ Example: Suppress warnings when critical alerts fire
+
+When to Use Silencing:
+  ✓ Planned maintenance windows
+  ✓ Known issues being worked on
+  ✓ Testing alert configurations
+  ✓ Temporary suppression of noisy alerts
+  ✓ One-off situations
+
+═══════════════════════════════════════════════════════════════════════════════
+10. COMPLETE EXAMPLE - INHIBITION RULE
+═══════════════════════════════════════════════════════════════════════════════
+
+Configuration:
+  inhibit_rules:
+    - source_match:
+        severity: critical
+      target_match:
+        severity: warning
+      equal: ['alertname', 'instance', 'job']
+
+Scenario:
+  Alerts Firing:
+    1. ServerDown (severity: critical, instance: server1, job: web)
+    2. HighCPU (severity: warning, instance: server1, job: web)
+    3. HighMemory (severity: warning, instance: server1, job: web)
+    4. HighCPU (severity: warning, instance: server2, job: web)
+
+Evaluation:
+  Source Match: ServerDown (severity: critical) ✓
+  
+  Target Match Check:
+    - HighCPU on server1: severity=warning ✓, equal labels match ✓ → SUPPRESSED
+    - HighMemory on server1: severity=warning ✓, equal labels match ✓ → SUPPRESSED
+    - HighCPU on server2: severity=warning ✓, equal labels DON'T match ✗ → NOT SUPPRESSED
+
+Result:
+  - ServerDown: Sent (source alert)
+  - HighCPU on server1: Suppressed (matches target and equal)
+  - HighMemory on server1: Suppressed (matches target and equal)
+  - HighCPU on server2: Sent (equal labels don't match - different instance)
+
+═══════════════════════════════════════════════════════════════════════════════
+11. COMPLETE EXAMPLE - SILENCING
+═══════════════════════════════════════════════════════════════════════════════
+
+Scenario: Planned maintenance on server1 from 10:00 to 12:00
+
+Step 1: Create Silence
+  Matchers:
+    - instance="server1"
+  
+  Time:
+    - Starts: 2025-11-08 10:00:00
+    - Ends:   2025-11-08 12:00:00
+  
+  Comment: "Planned maintenance - server1"
+
+Step 2: During Maintenance
+  Alerts that would fire:
+    - ServerDown (instance: server1) → SUPPRESSED by silence
+    - HighCPU (instance: server1) → SUPPRESSED by silence
+    - HighMemory (instance: server1) → SUPPRESSED by silence
+    - HighCPU (instance: server2) → NOT suppressed (different instance)
+
+Step 3: After Maintenance
+  - Silence expires at 12:00
+  - Alerts for server1 can fire again normally
+
+═══════════════════════════════════════════════════════════════════════════════
+12. BEST PRACTICES
+═══════════════════════════════════════════════════════════════════════════════
+
+Inhibition Rules:
+  ✓ Keep rules simple and clear
+  ✓ Document why each rule exists
+  ✓ Test rules carefully before deploying
+  ✓ Use 'equal' labels to ensure proper matching
+  ✓ Don't over-inhibit - you might miss important alerts
+
+Silencing:
+  ✓ Always add comments explaining why silence was created
+  ✓ Set appropriate end times (don't leave permanent silences)
+  ✓ Review and expire old silences regularly
+  ✓ Use specific matchers (don't silence too broadly)
+  ✓ Document maintenance windows in silence comments
+
+General:
+  ✓ Use inhibition for automatic, permanent relationships
+  ✓ Use silencing for temporary, manual situations
+  ✓ Monitor silenced alerts to ensure they're appropriate
+  ✓ Review silence history periodically
+  ✓ Combine both: inhibition for logic, silencing for exceptions
+
+═══════════════════════════════════════════════════════════════════════════════
+13. COMMON USE CASES
+═══════════════════════════════════════════════════════════════════════════════
+
+Inhibition Use Cases:
+  1. Suppress warnings when critical alerts fire
+  2. Suppress node-level alerts when cluster-level alert fires
+  3. Suppress application alerts when infrastructure alert fires
+  4. Suppress dependent alerts when root cause alert fires
+
+Silencing Use Cases:
+  1. Planned maintenance windows
+  2. Known issues being actively worked on
+  3. Testing alert configurations
+  4. Suppressing noisy alerts temporarily
+  5. Scheduled downtime periods
+  6. Development/testing environments
+
+═══════════════════════════════════════════════════════════════════════════════
+14. KEY TAKEAWAYS
+═══════════════════════════════════════════════════════════════════════════════
+
+Inhibition Rules:
+  ✓ Automatic suppression based on alert relationships
+  ✓ Configured in alertmanager.yml
+  ✓ Source alert suppresses target alerts
+  ✓ Uses source_match, target_match, and equal labels
+  ✓ Active while source alert is firing
+
+Silencing:
+  ✓ Manual suppression via UI/API/amtool
+  ✓ Based on label matchers
+  ✓ Can be time-limited
+  ✓ More flexible than inhibition
+  ✓ Useful for temporary situations
+
+Both:
+  ✓ Help reduce alert noise
+  ✓ Prevent alert flooding
+  ✓ Improve signal-to-noise ratio
+  ✓ Should be used thoughtfully
+  ✓ Need proper documentation
+
+═══════════════════════════════════════════════════════════════════════════════
+
+
+═══════════════════════════════════════════════════════════════════════════════
+RECORDING RULES IN PROMETHEUS - COMPREHENSIVE SUMMARY
+═══════════════════════════════════════════════════════════════════════════════
+
+═══════════════════════════════════════════════════════════════════════════════
+1. WHAT ARE RECORDING RULES?
+═══════════════════════════════════════════════════════════════════════════════
+
+Definition:
+- Recording rules pre-compute frequently used or expensive queries
+- They store the result as a new time series with a new metric name
+- Results are stored in Prometheus's time series database
+- Can be queried like any other metric
+
+Purpose:
+- Improve query performance (pre-compute expensive calculations)
+- Simplify complex queries (create reusable metrics)
+- Reduce query load on Prometheus
+- Create aggregated metrics for dashboards
+- Standardize metric names across environments
+
+Key Difference from Alert Rules:
+  Alert Rules:
+    - Evaluate conditions and create alerts
+    - Don't store new metrics
+    - Used for alerting only
+  
+  Recording Rules:
+    - Evaluate expressions and store results as new metrics
+    - Create new time series data
+    - Used for querying and dashboards
+
+═══════════════════════════════════════════════════════════════════════════════
+2. RECORDING RULE SYNTAX
+═══════════════════════════════════════════════════════════════════════════════
+
+Basic Structure:
+  groups:
+    - name: group_name
+      interval: 30s  # Optional: evaluation interval
+      rules:
+        - record: new_metric_name
+          expr: promql_expression
+
+Components:
+  record: The name of the new metric to create
+  expr: The PromQL expression to evaluate
+  labels: Optional labels to add to the new metric
+
+Example:
+  groups:
+    - name: cpu_recording_rules
+      interval: 30s
+      rules:
+        - record: instance:node_cpu_usage:rate5m
+          expr: 100 - (avg(irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)
+
+═══════════════════════════════════════════════════════════════════════════════
+3. WHY USE RECORDING RULES?
+═══════════════════════════════════════════════════════════════════════════════
+
+1. Performance Optimization
+   - Pre-compute expensive queries (aggregations, rate calculations)
+   - Reduce query time for dashboards
+   - Lower CPU usage on Prometheus server
+   - Faster response times for frequently accessed metrics
+
+2. Query Simplification
+   - Complex expressions become simple metric queries
+   - Example: Instead of:
+       rate(http_requests_total[5m]) / rate(http_requests_total[5m]) * 100
+     Use pre-computed: http_request_error_rate
+
+3. Reusability
+   - Define once, use everywhere
+   - Consistent calculations across dashboards
+   - Easier to maintain
+
+4. Aggregation
+   - Create cluster-level, service-level, or environment-level metrics
+   - Aggregate across multiple instances
+   - Create summary metrics
+
+5. Standardization
+   - Consistent metric naming conventions
+   - Standardize metric names across different exporters
+   - Create unified metrics from different sources
+
+═══════════════════════════════════════════════════════════════════════════════
+4. RECORDING RULE EXAMPLES
+═══════════════════════════════════════════════════════════════════════════════
+
+Example 1: CPU Usage Percentage
+  groups:
+    - name: cpu_recording_rules
+      rules:
+        - record: instance:node_cpu_usage:rate5m
+          expr: |
+            100 - (
+              avg(irate(node_cpu_seconds_total{mode="idle"}[5m])) 
+              * 100
+            )
+  
+  Usage: Query `instance:node_cpu_usage:rate5m` instead of complex expression
+
+Example 2: Memory Usage Percentage
+  groups:
+    - name: memory_recording_rules
+      rules:
+        - record: instance:node_memory_usage:ratio
+          expr: |
+            (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) 
+            / node_memory_MemTotal_bytes
+  
+  Usage: Query `instance:node_memory_usage:ratio` for memory usage
+
+Example 3: HTTP Request Rate
+  groups:
+    - name: http_recording_rules
+      rules:
+        - record: http:requests:rate5m
+          expr: rate(http_requests_total[5m])
+  
+  Usage: Query `http:requests:rate5m` instead of `rate(http_requests_total[5m])`
+
+Example 4: Error Rate Percentage
+  groups:
+    - name: http_recording_rules
+      rules:
+        - record: http:request_error_rate:ratio
+          expr: |
+            rate(http_requests_total{status=~"5.."}[5m]) 
+            / rate(http_requests_total[5m])
+  
+  Usage: Query `http:request_error_rate:ratio` for error percentage
+
+Example 5: Aggregated Metrics
+  groups:
+    - name: cluster_recording_rules
+      rules:
+        - record: cluster:cpu_usage:avg
+          expr: avg(instance:node_cpu_usage:rate5m)
+          labels:
+            cluster: production
+        
+        - record: cluster:memory_usage:avg
+          expr: avg(instance:node_memory_usage:ratio)
+          labels:
+            cluster: production
+
+Example 6: Multi-step Calculation
+  groups:
+    - name: service_recording_rules
+      rules:
+        # Step 1: Calculate request rate
+        - record: service:http_requests:rate5m
+          expr: rate(http_requests_total[5m])
+        
+        # Step 2: Calculate error rate using step 1
+        - record: service:http_errors:rate5m
+          expr: rate(http_requests_total{status=~"5.."}[5m])
+        
+        # Step 3: Calculate error percentage using steps 1 and 2
+        - record: service:http_error_rate:ratio
+          expr: |
+            service:http_errors:rate5m 
+            / service:http_requests:rate5m
+
+═══════════════════════════════════════════════════════════════════════════════
+5. NAMING CONVENTIONS FOR RECORDING RULES
+═══════════════════════════════════════════════════════════════════════════════
+
+Best Practice Naming Pattern:
+  level:metric:operation
+
+Components:
+  level: The aggregation level (instance, service, cluster, etc.)
+  metric: The metric name being recorded
+  operation: The operation performed (rate, sum, avg, ratio, etc.)
+
+Examples:
+  instance:node_cpu_usage:rate5m
+    - level: instance (per-instance metric)
+    - metric: node_cpu_usage
+    - operation: rate5m (5-minute rate)
+  
+  cluster:http_requests:sum
+    - level: cluster (cluster-wide)
+    - metric: http_requests
+    - operation: sum (summed across instances)
+  
+  service:memory_usage:avg
+    - level: service (service-level)
+    - metric: memory_usage
+    - operation: avg (averaged)
+
+Common Operations:
+  :rate5m    - 5-minute rate
+  :rate1m    - 1-minute rate
+  :sum       - Summed value
+  :avg       - Average value
+  :max       - Maximum value
+  :min       - Minimum value
+  :ratio     - Ratio/percentage
+  :increase  - Increase over time
+
+═══════════════════════════════════════════════════════════════════════════════
+6. HOW TO SAVE RECORDING RULES - FILE ORGANIZATION
+═══════════════════════════════════════════════════════════════════════════════
+
+Best Practice: Separate Files by Purpose
+
+Option 1: Separate Files (RECOMMENDED)
+  Directory Structure:
+    /usr/local/etc/rule/
+      ├── alerts.yml          # Alert rules only
+      ├── recording_cpu.yml    # CPU-related recording rules
+      ├── recording_memory.yml # Memory-related recording rules
+      ├── recording_http.yml  # HTTP-related recording rules
+      └── recording_cluster.yml # Cluster-level recording rules
+
+  prometheus.yml:
+    rule_files:
+      - "/usr/local/etc/rule/alerts.yml"
+      - "/usr/local/etc/rule/recording_cpu.yml"
+      - "/usr/local/etc/rule/recording_memory.yml"
+      - "/usr/local/etc/rule/recording_http.yml"
+      - "/usr/local/etc/rule/recording_cluster.yml"
+
+Option 2: Single File with Groups
+  File: /usr/local/etc/rule/recording_rules.yml
+  
+  groups:
+    - name: cpu_recording_rules
+      rules: [...]
+    - name: memory_recording_rules
+      rules: [...]
+    - name: http_recording_rules
+      rules: [...]
+
+  prometheus.yml:
+    rule_files:
+      - "/usr/local/etc/rule/alerts.yml"
+      - "/usr/local/etc/rule/recording_rules.yml"
+
+Option 3: By Service/Component
+  Directory Structure:
+    /usr/local/etc/rule/
+      ├── alerts.yml
+      ├── node_exporter_recording.yml
+      ├── application_recording.yml
+      └── infrastructure_recording.yml
+
+═══════════════════════════════════════════════════════════════════════════════
+7. CONFIGURING RECORDING RULES IN PROMETHEUS
+═══════════════════════════════════════════════════════════════════════════════
+
+Step 1: Create Recording Rules File
+  Create file: /usr/local/etc/rule/recording_rules.yml
+  
+  groups:
+    - name: cpu_recording_rules
+      interval: 30s
+      rules:
+        - record: instance:node_cpu_usage:rate5m
+          expr: 100 - (avg(irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)
+
+Step 2: Add to prometheus.yml
+  rule_files:
+    - "/usr/local/etc/rule/alerts.yml"
+    - "/usr/local/etc/rule/recording_rules.yml"
+
+Step 3: Reload Prometheus
+  curl -X POST http://localhost:9090/-/reload
+  
+  Or restart Prometheus service
+
+Step 4: Verify Rules Are Loaded
+  - Go to http://localhost:9090/rules
+  - Check that recording rules appear
+  - Verify they're being evaluated
+
+Step 5: Query the New Metric
+  - In Prometheus UI, query: instance:node_cpu_usage:rate5m
+  - Should return time series data
+
+═══════════════════════════════════════════════════════════════════════════════
+8. BEST PRACTICES FOR SAVING RECORDING RULES
+═══════════════════════════════════════════════════════════════════════════════
+
+1. File Organization
+   ✓ Separate recording rules from alert rules
+   ✓ Group related rules together
+   ✓ Use descriptive file names
+   ✓ Keep files focused and manageable size
+   ✓ Document what each file contains
+
+2. Naming Conventions
+   ✓ Use consistent naming pattern (level:metric:operation)
+   ✓ Make names descriptive and self-documenting
+   ✓ Avoid generic names like "metric1", "metric2"
+   ✓ Include operation type in name (rate, sum, avg)
+   ✓ Use underscores, not hyphens or spaces
+
+3. Group Organization
+   ✓ Group by metric type (CPU, memory, network)
+   ✓ Group by service/component
+   ✓ Group by aggregation level (instance, cluster)
+   ✓ Use descriptive group names
+   ✓ Keep groups focused on single purpose
+
+4. Evaluation Intervals
+   ✓ Set appropriate intervals based on use case
+   ✓ Shorter intervals for frequently queried metrics
+   ✓ Longer intervals for less critical metrics
+   ✓ Consider query frequency when setting intervals
+   ✓ Default: Uses global evaluation_interval if not specified
+
+5. Documentation
+   ✓ Add comments explaining complex expressions
+   ✓ Document why recording rule exists
+   ✓ Note dependencies between rules
+   ✓ Include examples of how to use the metric
+   ✓ Document any assumptions or limitations
+
+6. Version Control
+   ✓ Store rules in version control (git)
+   ✓ Use same workflow as alert rules
+   ✓ Review changes before deploying
+   ✓ Test rules in development first
+   ✓ Keep history of changes
+
+7. Testing
+   ✓ Test expressions in Prometheus UI first
+   ✓ Verify results match expectations
+   ✓ Check for errors in Prometheus logs
+   ✓ Monitor rule evaluation performance
+   ✓ Validate metric names are correct
+
+8. Maintenance
+   ✓ Review unused recording rules periodically
+   ✓ Remove obsolete rules
+   ✓ Update rules when source metrics change
+   ✓ Monitor rule evaluation time
+   ✓ Optimize expensive rules
+
+═══════════════════════════════════════════════════════════════════════════════
+9. COMPLETE EXAMPLE - RECORDING RULES FILE
+═══════════════════════════════════════════════════════════════════════════════
+
+File: /usr/local/etc/rule/recording_rules.yml
+
+groups:
+  # CPU-related recording rules
+  - name: cpu_recording_rules
+    interval: 30s
+    rules:
+      # CPU usage percentage (5-minute rate)
+      - record: instance:node_cpu_usage:rate5m
+        expr: |
+          100 - (
+            avg(irate(node_cpu_seconds_total{mode="idle"}[5m])) 
+            * 100
+          )
+      
+      # CPU usage by mode
+      - record: instance:node_cpu_seconds:rate5m
+        expr: rate(node_cpu_seconds_total[5m])
+  
+  # Memory-related recording rules
+  - name: memory_recording_rules
+    interval: 30s
+    rules:
+      # Memory usage ratio
+      - record: instance:node_memory_usage:ratio
+        expr: |
+          (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) 
+          / node_memory_MemTotal_bytes
+      
+      # Memory usage percentage
+      - record: instance:node_memory_usage:percent
+        expr: |
+          (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) 
+          / node_memory_MemTotal_bytes 
+          * 100
+  
+  # Disk-related recording rules
+  - name: disk_recording_rules
+    interval: 1m
+    rules:
+      # Disk usage ratio
+      - record: instance:node_filesystem_usage:ratio
+        expr: |
+          (node_filesystem_size_bytes - node_filesystem_avail_bytes) 
+          / node_filesystem_size_bytes
+      
+      # Disk usage percentage
+      - record: instance:node_filesystem_usage:percent
+        expr: |
+          (node_filesystem_size_bytes - node_filesystem_avail_bytes) 
+          / node_filesystem_size_bytes 
+          * 100
+
+═══════════════════════════════════════════════════════════════════════════════
+10. INTEGRATION WITH YOUR CURRENT SETUP
+═══════════════════════════════════════════════════════════════════════════════
+
+Current Setup:
+  - Config files in: /usr/local/etc/
+  - Alert rules in: /usr/local/etc/rule/alerts.yml
+  - Repo tracking: config/rule/alerts.yml
+  - Sync script: sync-config.sh
+
+Recommended Addition:
+  1. Create recording rules file:
+     config/rule/recording_rules.yml
+  
+  2. Update prometheus.yml:
+     rule_files:
+       - "/usr/local/etc/rule/alerts.yml"
+       - "/usr/local/etc/rule/recording_rules.yml"
+  
+  3. Update sync-config.sh to include recording rules:
+     sudo cp config/rule/recording_rules.yml /usr/local/etc/rule/recording_rules.yml
+  
+  4. Sync and reload:
+     ./sync-config.sh
+     curl -X POST http://localhost:9090/-/reload
+
+Directory Structure:
+  config/
+    ├── prometheus.yml
+    └── rule/
+        ├── alerts.yml
+        └── recording_rules.yml
+
+═══════════════════════════════════════════════════════════════════════════════
+11. COMMON PATTERNS AND USE CASES
+═══════════════════════════════════════════════════════════════════════════════
+
+Pattern 1: Rate Calculations
+  - Pre-compute rate() for frequently queried counters
+  - Reduces query time for dashboards
+  - Example: HTTP request rates, error rates
+
+Pattern 2: Aggregations
+  - Create cluster/service-level metrics
+  - Aggregate across multiple instances
+  - Example: Average CPU across cluster
+
+Pattern 3: Percentages and Ratios
+  - Convert raw values to percentages
+  - Calculate ratios between metrics
+  - Example: CPU usage %, error rate %
+
+Pattern 4: Multi-step Calculations
+  - Break complex calculations into steps
+  - Each step creates a reusable metric
+  - Example: Error rate = errors / total requests
+
+Pattern 5: Standardization
+  - Normalize metric names from different exporters
+  - Create unified naming conventions
+  - Example: Standardize CPU metric names
+
+Pattern 6: Historical Aggregations
+  - Pre-compute aggregations over time windows
+  - Useful for long-term trends
+  - Example: Daily/weekly averages
+
+═══════════════════════════════════════════════════════════════════════════════
+12. MONITORING RECORDING RULES
+═══════════════════════════════════════════════════════════════════════════════
+
+Check Rule Status:
+  - Prometheus UI: http://localhost:9090/rules
+  - Shows all recording rules and their status
+  - Indicates if rules are being evaluated
+
+Check Rule Performance:
+  - Prometheus UI: http://localhost:9090/rules
+  - Shows evaluation time for each rule
+  - Monitor for slow rules
+
+Check Metrics Exist:
+  - Query the recorded metric in Prometheus UI
+  - Verify data is being stored
+  - Check metric labels are correct
+
+Common Issues:
+  - Rules not loading: Check file path in prometheus.yml
+  - No data: Check source metrics exist
+  - Errors: Check Prometheus logs
+  - Slow evaluation: Optimize expressions or increase interval
+
+═══════════════════════════════════════════════════════════════════════════════
+13. KEY TAKEAWAYS
+═══════════════════════════════════════════════════════════════════════════════
+
+✓ Recording rules pre-compute and store query results as new metrics
+✓ Use them to improve performance and simplify queries
+✓ Follow naming convention: level:metric:operation
+✓ Separate recording rules from alert rules in different files
+✓ Organize rules by purpose (CPU, memory, HTTP, etc.)
+✓ Set appropriate evaluation intervals
+✓ Document complex expressions
+✓ Test rules before deploying
+✓ Monitor rule performance
+✓ Keep rules in version control
+✓ Use consistent file organization
+✓ Group related rules together
+
+═══════════════════════════════════════════════════════════════════════════════
+
+
  Implement Side Car patern
 
 
