@@ -13,6 +13,10 @@ echo "✓ Copied prometheus.yml to /usr/local/etc/"
 sudo cp config/rule/alerts.yml /usr/local/etc/rule/alerts.yml
 echo "✓ Copied alerts.yml to /usr/local/etc/rule/"
 
+# Copy recording_rule.yml
+sudo cp config/recording_rule.yml /usr/local/etc/rule/recording_rule.yml
+echo "✓ Copied recording_rule.yml to /usr/local/etc/rule/"
+
 echo ""
 echo "Configuration files synced!"
 echo "Note: You may need to reload Prometheus for changes to take effect."

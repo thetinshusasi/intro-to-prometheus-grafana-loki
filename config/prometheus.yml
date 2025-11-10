@@ -10,6 +10,7 @@ scrape_configs:
       - targets: ["localhost:9100"]
 rule_files:
   - "/usr/local/etc/rule/alerts.yml"
+  - "/usr/local/etc/rule/recording_rule.yml"
 
 alerting:
   alertmanagers:
