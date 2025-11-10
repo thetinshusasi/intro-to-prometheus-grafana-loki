@@ -1311,6 +1311,517 @@ Common Issues:
 ═══════════════════════════════════════════════════════════════════════════════
 
 
- Implement Side Car patern
+═══════════════════════════════════════════════════════════════════════════════
+PUSHGATEWAY - SUMMARY AND PROMETHEUS CONFIG CHANGES
+═══════════════════════════════════════════════════════════════════════════════
+
+What is Pushgateway?
+- A service that accepts metrics pushed by short‑lived/batch jobs and exposes them to Prometheus via /metrics (default port 9091).
+- Not a general-purpose ingestion layer; avoid using it for long‑running services that can be scraped directly.
+
+When to use
+- Cron jobs, CI/CD steps, and ephemeral batch jobs that exit before Prometheus can scrape them.
+
+Prometheus scrape config (preserve pushed labels):
+
+  scrape_configs:
+    - job_name: "pushgateway"
+      honor_labels: true        # keep job/instance from pushed metrics
+      static_configs:
+        - targets: ["localhost:9091"]
+
+Why honor_labels: true?
+- Pushgateway encodes the grouping key (e.g., job, instance) as labels.
+- Without honor_labels, the scraper’s labels (job="pushgateway", instance="host:9091") would override the pushed labels.
+
+Pushing metrics (HTTP API)
+- Create/replace:   PUT  /metrics/job/<job_name>[/instance/<instance>]
+- Add/merge:        POST /metrics/job/<job_name>[/instance/<instance>]
+- Delete all for job:       DELETE /metrics/job/<job_name>
+- Delete one instance:      DELETE /metrics/job/<job_name>/instance/<instance>
+
+Examples (text exposition format):
+
+  # push for a job and instance
+  curl -X PUT \
+    --data-binary "# HELP my_job_last_success Unix time of last success
+# TYPE my_job_last_success gauge
+my_job_last_success $(date +%s)" \
+    http://localhost:9091/metrics/job/my_batch/instance/host1
+
+  # delete metrics for that instance
+  curl -X DELETE http://localhost:9091/metrics/job/my_batch/instance/host1
+
+Best practices
+- Use distinct job and instance values in the push URL; avoid embedding hostnames in metric names.
+- Keep payloads small and metric/label names stable and consistent.
+- Delete metrics on successful completion to avoid stale data.
+- Do not expose Pushgateway publicly; protect with network controls or an auth proxy.
+- Consider recording rules on top of pushed metrics for dashboards.
+
+Running the binary
+- From project root: ./pushgateway/pushgateway  (listens on port 9091)
+- Check version/type: ./pushgateway/pushgateway --version
+- If not executable: chmod +x pushgateway/pushgateway
+==============================================
+
+═══════════════════════════════════════════════════════════════════════════════
+COLLECTORREGISTRY IN PROMETHEUS CLIENT - SUMMARY
+═══════════════════════════════════════════════════════════════════════════════
+
+═══════════════════════════════════════════════════════════════════════════════
+1. WHAT IS COLLECTORREGISTRY?
+═══════════════════════════════════════════════════════════════════════════════
+
+Definition:
+- CollectorRegistry is a component from Prometheus client libraries that manages
+  metric collectors and formats them for Prometheus consumption
+- Acts as a container/organizer for metrics in your application
+- Client-side component (not part of Prometheus server)
+
+Purpose:
+- Tracks and manages all metric collectors in your application
+- Formats metrics in Prometheus exposition format
+- Provides metrics when /metrics endpoint is scraped
+- Organizes metrics for exposure to Prometheus
+
+═══════════════════════════════════════════════════════════════════════════════
+2. WHEN IS REGISTRY CREATED?
+═══════════════════════════════════════════════════════════════════════════════
+
+In Pushgateway:
+- Registry is created ONCE when Pushgateway starts up
+- Single registry instance persists for entire process lifetime
+- All push requests use the same registry
+- Metrics accumulate in registry until deleted or restart
+- On restart: New empty registry created (previous metrics lost unless persisted)
+
+In Client Applications:
+- Default Registry: Created automatically by Prometheus client library
+  - Global singleton instance
+  - All metrics automatically registered to it
+  - Used when exposing /metrics endpoint
+  
+- Custom Registry: Created explicitly by developer
+  - Created when you call: CollectorRegistry()
+  - Isolated from default registry
+  - Useful for pushing to Pushgateway, testing, or multiple metric sets
+
+═══════════════════════════════════════════════════════════════════════════════
+3. WHAT HAPPENS WHEN YOU CALL COLLECTORREGISTRY METHODS?
+═══════════════════════════════════════════════════════════════════════════════
+
+Creating a Registry:
+  registry = CollectorRegistry()
+  → Creates empty registry instance
+  → Initializes internal data structures
+  → Ready to accept metric collectors
+  → No metrics registered yet
+
+Registering a Metric:
+  counter = Counter('http_requests_total', registry=registry)
+  → Metric added to registry's internal collection
+  → Registry tracks metric's name, type, labels, current value
+  → Registry maintains reference to collector
+  → Metric will appear when /metrics is scraped
+
+Registering Multiple Metrics:
+  counter = Counter('requests', registry=registry)
+  gauge = Gauge('connections', registry=registry)
+  → Each metric stored separately in registry
+  → Registry maintains list/map of all registered collectors
+  → All collectors tracked together
+  → All metrics formatted together when exposed
+
+Collecting Metrics (formatting):
+  output = generate_latest(registry)
+  → Registry iterates through all registered collectors
+  → Calls collect() on each collector to get current values
+  → Formats each metric in Prometheus exposition format
+  → Returns string with all metrics formatted for Prometheus
+
+Unregistering a Collector:
+  registry.unregister(counter)
+  → Removes collector from registry's internal collection
+  → Metric no longer tracked
+  → Won't appear in future /metrics output
+  → Memory freed (if no other references)
+
+═══════════════════════════════════════════════════════════════════════════════
+4. KEY METHODS AND THEIR EFFECTS
+═══════════════════════════════════════════════════════════════════════════════
+
+register(collector):
+  - Adds collector to registry
+  - Registry starts tracking this collector
+  - Collector will appear in /metrics output
+
+unregister(collector):
+  - Removes collector from registry
+  - Collector no longer tracked
+  - Won't appear in future /metrics output
+
+collect() (internal):
+  - Iterates through all registered collectors
+  - Calls each collector's collect() method
+  - Gathers current metric values
+  - Returns formatted metric data
+
+get_sample_value(metric_name):
+  - Looks up specific metric in registry
+  - Returns current value of that metric
+  - Useful for programmatic access
+
+═══════════════════════════════════════════════════════════════════════════════
+5. DEFAULT REGISTRY VS CUSTOM REGISTRY
+═══════════════════════════════════════════════════════════════════════════════
+
+Default Registry (Automatic):
+  from prometheus_client import Counter
+  
+  counter = Counter('http_requests_total')
+  # Uses default registry automatically
+  
+  → Prometheus client maintains global default registry
+  → Metrics automatically registered to default registry
+  → When you expose /metrics, it uses default registry
+  → All metrics share same default registry
+
+Custom Registry (Explicit):
+  from prometheus_client import CollectorRegistry, Counter
+  
+  registry = CollectorRegistry()
+  counter = Counter('http_requests_total', registry=registry)
+  
+  → Creates separate, isolated registry
+  → Metrics only in this custom registry
+  → Useful for:
+    * Pushing to Pushgateway (isolated metrics)
+    * Multiple metric sets
+    * Testing (separate test metrics)
+
+═══════════════════════════════════════════════════════════════════════════════
+6. COMPLETE FLOW EXAMPLE
+═══════════════════════════════════════════════════════════════════════════════
+
+Step 1: Create registry
+  registry = CollectorRegistry()
+  → Empty registry created
+
+Step 2: Create and register metrics
+  counter = Counter('requests_total', registry=registry)
+  gauge = Gauge('active_connections', registry=registry)
+  → Metrics added to registry's internal collection
+
+Step 3: Update metrics
+  counter.inc()  # Increment counter
+  gauge.set(10)  # Set gauge value
+  → Metric values updated, registry still tracks them
+
+Step 4: Collect and format (when /metrics is scraped)
+  output = generate_latest(registry)
+  → Registry:
+    1. Iterates through all registered collectors
+    2. Calls collect() on each to get current values
+    3. Formats in Prometheus exposition format
+    4. Returns formatted string
+
+Output:
+  # HELP requests_total ...
+  # TYPE requests_total counter
+  requests_total 1.0
+  # HELP active_connections ...
+  # TYPE active_connections gauge
+  active_connections 10.0
+
+═══════════════════════════════════════════════════════════════════════════════
+7. REGISTRY STATE MANAGEMENT
+═══════════════════════════════════════════════════════════════════════════════
+
+Registry Maintains:
+  ✓ List of all registered collectors
+  ✓ Metric metadata (names, types, help text)
+  ✓ Current metric values (via collectors)
+  ✓ Label combinations for each metric
+
+Registry Does NOT:
+  ✗ Store historical values (Prometheus does that)
+  ✗ Persist data to disk (in-memory only)
+  ✗ Send metrics to Prometheus (Prometheus pulls from /metrics)
+
+═══════════════════════════════════════════════════════════════════════════════
+8. KEY TAKEAWAYS
+═══════════════════════════════════════════════════════════════════════════════
+
+✓ CollectorRegistry is a client-side metric manager
+✓ Created once at startup (Pushgateway) or when needed (client apps)
+✓ Tracks all registered metric collectors
+✓ Formats metrics for Prometheus exposition format
+✓ Provides metrics when /metrics endpoint is scraped
+✓ Default registry is automatic, custom registry is explicit
+✓ Registry maintains current state, not historical data
+✓ Metrics persist in registry until unregistered or app restarts
+✓ In Pushgateway: Single registry for entire process lifetime
+✓ In Client Apps: Can have multiple registries for different purposes
+
+═══════════════════════════════════════════════════════════════════════════════
+
+
+═══════════════════════════════════════════════════════════════════════════════
+PROMETHEUS AUTHENTICATION METHODS - SUMMARY
+═══════════════════════════════════════════════════════════════════════════════
+
+═══════════════════════════════════════════════════════════════════════════════
+1. OVERVIEW
+═══════════════════════════════════════════════════════════════════════════════
+
+Important Note:
+- Prometheus does NOT have built-in authentication for UI/API
+- By default, Prometheus UI and API are unauthenticated
+- Authentication must be added via external methods or web.config.file
+- Scrape target authentication IS built-in
+- Alertmanager authentication IS built-in
+- Remote write authentication IS built-in
+
+═══════════════════════════════════════════════════════════════════════════════
+2. UI/API AUTHENTICATION METHODS
+═══════════════════════════════════════════════════════════════════════════════
+
+Method 1: Reverse Proxy with Authentication
+  - Use reverse proxy (nginx, Apache, Traefik) in front of Prometheus
+  - Proxy handles authentication, Prometheus runs behind it
+  - Supports: Basic Auth, OAuth2, LDAP, SAML, JWT, API keys
+  
+  Example (Nginx Basic Auth):
+    server {
+      listen 9090;
+      location / {
+        auth_basic "Prometheus";
+        auth_basic_user_file /etc/nginx/.htpasswd;
+        proxy_pass http://localhost:9090;
+      }
+    }
+
+Method 2: Web Configuration File (Prometheus 2.x+)
+  - Configure TLS and basic authentication via web.config.file
+  - Supports TLS, basic auth, and headers
+  
+  web-config.yml:
+    tls_server_config:
+      cert_file: /path/to/cert.pem
+      key_file: /path/to/key.pem
+    
+    basic_auth_users:
+      admin: $2y$10$hashed_password
+      user: $2y$10$hashed_password
+  
+  Start Prometheus:
+    prometheus --web.config.file=web-config.yml
+  
+  Generate password hash:
+    htpasswd -nBC 10 admin
+
+Method 3: TLS/SSL (HTTPS)
+  - Encrypts traffic between client and Prometheus
+  - Does NOT authenticate users, but secures communication
+  - Requires certificates
+  
+  web-config.yml:
+    tls_server_config:
+      cert_file: /path/to/cert.pem
+      key_file: /path/to/key.pem
+
+═══════════════════════════════════════════════════════════════════════════════
+3. SCRAPE TARGET AUTHENTICATION
+═══════════════════════════════════════════════════════════════════════════════
+
+Basic Authentication:
+  scrape_configs:
+    - job_name: 'secure-service'
+      basic_auth:
+        username: 'scraper'
+        password: 'secret'
+      static_configs:
+        - targets: ['service:8080']
+
+Bearer Token:
+  scrape_configs:
+    - job_name: 'api-service'
+      bearer_token: 'your-bearer-token-here'
+      static_configs:
+        - targets: ['api:8080']
+
+Bearer Token File:
+  scrape_configs:
+    - job_name: 'api-service'
+      bearer_token_file: '/path/to/token'
+      static_configs:
+        - targets: ['api:8080']
+
+TLS Configuration:
+  scrape_configs:
+    - job_name: 'secure-service'
+      scheme: https
+      tls_config:
+        ca_file: /path/to/ca.crt
+        cert_file: /path/to/client.crt
+        key_file: /path/to/client.key
+        insecure_skip_verify: false
+      static_configs:
+        - targets: ['service:8443']
+
+═══════════════════════════════════════════════════════════════════════════════
+4. ALERTMANAGER AUTHENTICATION
+═══════════════════════════════════════════════════════════════════════════════
+
+Basic Authentication:
+  alerting:
+    alertmanagers:
+      - basic_auth:
+          username: 'prometheus'
+          password: 'secret'
+        static_configs:
+          - targets:
+            - 'alertmanager:9093'
+
+Bearer Token:
+  alerting:
+    alertmanagers:
+      - bearer_token: 'alertmanager-token'
+        static_configs:
+          - targets:
+            - 'alertmanager:9093'
+
+═══════════════════════════════════════════════════════════════════════════════
+5. REMOTE WRITE AUTHENTICATION
+═══════════════════════════════════════════════════════════════════════════════
+
+Basic Authentication:
+  remote_write:
+    - url: 'https://remote-storage/api/v1/write'
+      basic_auth:
+        username: 'prometheus'
+        password: 'secret'
+
+Bearer Token:
+  remote_write:
+    - url: 'https://remote-storage/api/v1/write'
+      bearer_token: 'remote-token'
+
+OAuth2:
+  remote_write:
+    - url: 'https://remote-storage/api/v1/write'
+      oauth2:
+        client_id: 'prometheus'
+        client_secret: 'secret'
+        token_url: 'https://auth-server/oauth/token'
+
+═══════════════════════════════════════════════════════════════════════════════
+6. NETWORK-LEVEL SECURITY
+═══════════════════════════════════════════════════════════════════════════════
+
+Methods:
+  - Firewall rules (restrict access to specific IPs)
+  - VPN access (require VPN connection)
+  - Private networks (deploy in private network)
+  - IP whitelisting (via reverse proxy)
+
+Use Cases:
+  - Additional layer of security
+  - Network isolation
+  - Defense in depth
+
+═══════════════════════════════════════════════════════════════════════════════
+7. KUBERNETES AUTHENTICATION
+═══════════════════════════════════════════════════════════════════════════════
+
+Methods:
+  - Service accounts and RBAC (Kubernetes native auth)
+  - Network policies (restrict pod-to-pod communication)
+  - Ingress with authentication (Ingress controller with auth)
+  - mTLS between pods (service mesh)
+
+Service Mesh (Istio, Linkerd):
+  - Automatic mTLS between services
+  - Works well in Kubernetes
+  - Provides encryption and authentication
+
+═══════════════════════════════════════════════════════════════════════════════
+8. AUTHENTICATION METHODS SUMMARY TABLE
+═══════════════════════════════════════════════════════════════════════════════
+
+┌──────────────────────┬──────────────────┬──────────────────┬─────────────┐
+│ Method               │ Use Case         │ Where Applied     │ Built-in    │
+├──────────────────────┼──────────────────┼──────────────────┼─────────────┤
+│ Reverse Proxy        │ UI/API access    │ Front of Prometheus│ No (external)│
+│ Web Config File      │ UI/API access    │ Prometheus config │ Yes (2.x+)  │
+│ TLS/SSL              │ Encryption       │ Prometheus server │ Yes         │
+│ Basic Auth (scrape)  │ Target scraping  │ scrape_configs    │ Yes         │
+│ Bearer Token (scrape)│ Target scraping  │ scrape_configs    │ Yes         │
+│ TLS (scrape)         │ Secure targets   │ scrape_configs    │ Yes         │
+│ Alertmanager Auth    │ Sending alerts   │ alerting config   │ Yes         │
+│ Remote Write Auth    │ Remote storage   │ remote_write      │ Yes         │
+│ Network Security     │ Network level    │ Infrastructure    │ No (external)│
+│ Service Mesh         │ mTLS in K8s      │ Infrastructure    │ No (external)│
+└──────────────────────┴──────────────────┴──────────────────┴─────────────┘
+
+═══════════════════════════════════════════════════════════════════════════════
+9. BEST PRACTICES
+═══════════════════════════════════════════════════════════════════════════════
+
+UI/API Access:
+  ✓ Use reverse proxy for production deployments
+  ✓ Enable TLS for encrypted communication
+  ✓ Use web.config.file for simple setups
+  ✓ Implement strong password policies
+
+Scrape Targets:
+  ✓ Use basic auth or bearer tokens for authenticated targets
+  ✓ Use TLS for encrypted communication
+  ✓ Store credentials securely (secret management)
+  ✓ Use separate credentials per service/job
+
+Alertmanager:
+  ✓ Authenticate connections to Alertmanager
+  ✓ Use bearer tokens for better security
+  ✓ Store tokens securely
+
+Remote Write:
+  ✓ Authenticate all remote write endpoints
+  ✓ Use OAuth2 for cloud services
+  ✓ Rotate credentials regularly
+
+General:
+  ✓ Use network-level security as additional layer
+  ✓ Restrict network access (firewalls, private networks)
+  ✓ Rotate credentials regularly
+  ✓ Use separate credentials per service/job
+  ✓ Store secrets securely (secret management systems)
+  ✓ Monitor authentication failures
+  ✓ Use service accounts in Kubernetes
+  ✓ Implement defense in depth (multiple layers)
+
+═══════════════════════════════════════════════════════════════════════════════
+10. KEY TAKEAWAYS
+═══════════════════════════════════════════════════════════════════════════════
+
+✓ Prometheus has NO built-in UI/API authentication
+✓ Authentication must be added via external methods or web.config.file
+✓ Scrape target authentication IS built-in (basic auth, bearer token, TLS)
+✓ Alertmanager authentication IS built-in
+✓ Remote write authentication IS built-in
+✓ Use reverse proxy for production UI/API access
+✓ Use web.config.file for simple authentication setups
+✓ Always use TLS for encrypted communication
+✓ Store credentials securely
+✓ Use network-level security as additional layer
+✓ Rotate credentials regularly
+✓ Use separate credentials per service/job
+
+═══════════════════════════════════════════════════════════════════════════════
+
+Things to practice
+  - Implement Side Car patern
+  - Relabeling K8 values : https://www.youtube.com/watch?v=mXvuKAb6ZwY
 
 
