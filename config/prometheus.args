@@ -1,0 +1,4 @@
+--config.file /usr/local/etc/prometheus.yml
+--web.listen-address=127.0.0.1:9090
+--storage.tsdb.path /usr/local/var/prometheus
+--web.config.file=/usr/local/etc/web.config.yml
