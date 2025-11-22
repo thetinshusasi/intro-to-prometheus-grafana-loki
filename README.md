@@ -121,3 +121,214 @@ Use it to:
 - Check alert status
 - Silence alerts
 - Test alert configurations
+
+## Loki
+
+Loki is a horizontally-scalable, highly-available log aggregation system inspired by Prometheus. It's designed to be cost-effective and operationally simple.
+
+### Installation
+
+Loki is set up using Docker Compose. The configuration files are located in the `loki/` directory.
+
+### Running Loki
+
+**Start Loki stack (Loki + Promtail + Grafana):**
+
+```bash
+cd loki
+docker-compose up -d
+```
+
+This will start three services:
+
+1. **Loki** - Log aggregation system (port `3100`)
+2. **Promtail** - Log shipper that collects logs and sends them to Loki
+3. **Grafana** - Visualization tool with Loki datasource pre-configured (port `3000`)
+
+**Check service status:**
+
+```bash
+docker-compose ps
+```
+
+**View logs:**
+
+```bash
+# All services
+docker-compose logs -f
+
+# Specific service
+docker-compose logs -f loki
+docker-compose logs -f promtail
+docker-compose logs -f grafana
+```
+
+**Stop services:**
+
+```bash
+docker-compose down
+```
+
+**Stop and remove volumes (clean slate):**
+
+```bash
+docker-compose down -v
+```
+
+### Alternative: Using Loki + Promtail with Brew Grafana
+
+If you're running Grafana via Homebrew services and want to use that instance instead of the Docker Grafana, use the alternative docker-compose file:
+
+**Start only Loki and Promtail:**
+
+```bash
+cd loki
+docker-compose -f docker-compose-loki-promtail.yaml up -d
+```
+
+This will start only two services:
+
+1. **Loki** - Log aggregation system (port `3100`)
+2. **Promtail** - Log shipper that collects logs and sends them to Loki
+
+**Check service status:**
+
+```bash
+docker-compose -f docker-compose-loki-promtail.yaml ps
+```
+
+**View logs:**
+
+```bash
+# All services
+docker-compose -f docker-compose-loki-promtail.yaml logs -f
+
+# Specific service
+docker-compose -f docker-compose-loki-promtail.yaml logs -f loki
+docker-compose -f docker-compose-loki-promtail.yaml logs -f promtail
+```
+
+**Stop services:**
+
+```bash
+docker-compose -f docker-compose-loki-promtail.yaml down
+```
+
+**Configure Grafana (Brew) to connect to Loki:**
+
+1. Open Grafana: `http://localhost:3000`
+2. Go to **Configuration** → **Data Sources**
+3. Click **Add data source**
+4. Select **Loki**
+5. Configure:
+   - **URL**: `http://localhost:3100`
+   - **Access**: Server (default)
+6. Click **Save & Test**
+
+The Loki datasource will now be available in Grafana Explore and dashboards.
+
+### Accessing Services
+
+- **Loki API**: `http://localhost:3100`
+- **Loki UI**: `http://localhost:3100/ready` (health check)
+- **Grafana UI**: `http://localhost:3000`
+  - Default login: `admin` / `admin` (or anonymous access if enabled)
+  - Loki datasource is automatically configured
+
+### Configuration Files
+
+The Loki stack configuration files are located in the `loki/` directory:
+
+- `docker-compose.yaml` - Docker Compose service definitions (includes Loki, Promtail, and Grafana)
+- `docker-compose-loki-promtail.yaml` - Alternative Docker Compose file (Loki + Promtail only, for use with brew Grafana)
+- `loki-config.yaml` - Loki server configuration
+- `promtail-config.yaml` - Promtail log collection configuration
+
+### Loki Configuration
+
+The main Loki configuration (`loki-config.yaml`) includes:
+
+- **Storage**: Filesystem-based storage (for development/testing)
+- **Schema**: TSDB index with filesystem object store
+- **Ports**: HTTP on 3100, gRPC on 9096
+- **Ruler**: Configured to send alerts to Alertmanager at `localhost:9093`
+
+### Promtail Configuration
+
+Promtail is configured to:
+
+- Collect logs from `/var/log` directory (mounted as volume)
+- Forward logs to Loki
+- Apply labels for log organization
+
+### Integration with Prometheus
+
+Loki can be integrated with Prometheus for unified observability:
+
+1. **Add Loki as a datasource in Grafana** (already configured in docker-compose)
+2. **Query logs using LogQL** in Grafana Explore
+3. **Correlate metrics and logs** in Grafana dashboards
+4. **Set up log-based alerts** using Loki's ruler component
+
+### Workflow
+
+1. Start Loki stack: `cd loki && docker-compose up -d`
+2. Access Grafana at `http://localhost:3000`
+3. Navigate to Explore and select Loki datasource
+4. Query logs using LogQL (e.g., `{job="varlogs"}`)
+5. Create dashboards combining Prometheus metrics and Loki logs
+
+### Example LogQL Queries
+
+```logql
+# All logs
+{job="varlogs"}
+
+# Filter by log level
+{job="varlogs"} |= "error"
+
+# Count logs over time
+count_over_time({job="varlogs"}[5m])
+
+# Rate of logs
+rate({job="varlogs"}[5m])
+```
+
+### Troubleshooting
+
+**Check if services are running:**
+
+```bash
+docker-compose ps
+```
+
+**View service logs:**
+
+```bash
+docker-compose logs loki
+docker-compose logs promtail
+```
+
+**Check Loki health:**
+
+```bash
+curl http://localhost:3100/ready
+curl http://localhost:3100/metrics
+```
+
+**Restart a specific service:**
+
+```bash
+docker-compose restart loki
+```
+
+### Production Considerations
+
+For production deployments:
+
+- Replace filesystem storage with object storage (S3, GCS, Azure Blob)
+- Configure proper authentication and authorization
+- Set up retention policies
+- Use distributed deployment mode for scalability
+- Configure proper resource limits in docker-compose
+- Set up monitoring for Loki itself

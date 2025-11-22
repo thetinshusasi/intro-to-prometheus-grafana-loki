@@ -1,3 +1,176 @@
+================================================================================
+                    OBSERVABILITY STACK ARCHITECTURE
+================================================================================
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           APPLICATION LAYER                                  │
+│                                                                               │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐                 │
+│  │   App 1      │    │   App 2      │    │   App N      │                 │
+│  │  (Metrics)   │    │  (Metrics)   │    │  (Metrics)   │                 │
+│  └──────┬───────┘    └──────┬───────┘    └──────┬───────┘                 │
+│         │                   │                    │                          │
+│         │ PUSH              │ PUSH               │ PUSH                      │
+│         └───────────────────┴────────────────────┴──────────────┐            │
+│                                                                  │            │
+│                                                         ┌────────▼────────┐  │
+│                                                         │  Push Gateway   │  │
+│                                                         │  (Port 9091)    │  │
+│                                                         └────────┬────────┘  │
+└──────────────────────────────────────────────────────────────────┼───────────┘
+                                                                   │
+                                                                   │ PULL
+┌──────────────────────────────────────────────────────────────────┼───────────┐
+│                         METRICS COLLECTION                        │           │
+│                                                                   │           │
+│  ┌───────────────────────────────────────────────────────────────▼──────┐   │
+│  │                    Prometheus Server                                 │   │
+│  │                    (Port 9090)                                       │   │
+│  │  ┌──────────────────────────────────────────────────────────────┐   │   │
+│  │  │  Service Discovery                                           │   │   │
+│  │  │  - Static configs                                             │   │   │
+│  │  │  - File-based SD                                             │   │   │
+│  │  │  - DNS-based SD                                               │   │   │
+│  │  │  - Kubernetes SD                                              │   │   │
+│  │  └──────────────────────────────────────────────────────────────┘   │   │
+│  │                                                                       │   │
+│  │  ┌──────────────────────────────────────────────────────────────┐   │   │
+│  │  │  Scrape Targets (PULL)                                       │   │   │
+│  │  │  • Push Gateway ────────────────┐                            │   │   │
+│  │  │  • Node Exporter ───────────────┼──┐                         │   │   │
+│  │  │  • App endpoints ────────────────┼──┼──┐                      │   │   │
+│  │  │  • Alloy ───────────────────────┼──┼──┼──┐                   │   │   │
+│  │  └─────────────────────────────────┼──┼──┼──┼───────────────────┘   │   │
+│  └────────────────────────────────────┼──┼──┼──┼───────────────────────┘   │
+│                                        │  │  │  │                           │
+│                                        │  │  │  │                           │
+│  ┌────────────────────────────────────▼──▼──▼──▼───────────────────────┐  │
+│  │                    Node Exporter                                      │  │
+│  │                    (Port 9100)                                       │  │
+│  │                    • CPU, Memory, Disk, Network                      │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                                                              │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │                    Alloy (OpenTelemetry Collector)                  │  │
+│  │                    • Receives metrics/logs/traces                    │  │
+│  │                    • Processes and forwards to backends              │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────────────────┘
+                                                                   │
+                                                                   │ ALERTS
+┌──────────────────────────────────────────────────────────────────▼───────────┐
+│                         ALERTING LAYER                                       │
+│                                                                               │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │                    Alertmanager                                      │   │
+│  │                    (Port 9093)                                       │   │
+│  │                    • Receives alerts from Prometheus                 │   │
+│  │                    • Routes to channels (email, Slack, PagerDuty)     │   │
+│  │                    • Handles grouping, deduplication, silencing       │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                         LOGS COLLECTION                                       │
+│                                                                               │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │                    Promtail                                           │   │
+│  │                    (Port 9080)                                       │   │
+│  │                    • Reads log files from filesystem                 │   │
+│  │                    • Tracks position                                 │   │
+│  │                    • Adds labels                                     │   │
+│  └───────────────────────┬──────────────────────────────────────────────┘   │
+│                          │                                                    │
+│                          │ PUSH (HTTP POST)                                   │
+│                          ▼                                                    │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │                    Loki                                              │   │
+│  │                    (Port 3100)                                       │   │
+│  │                    • Receives logs via push API                     │   │
+│  │                    • Stores in chunks                               │   │
+│  │                    • Indexes for querying                           │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                         VISUALIZATION LAYER                                   │
+│                                                                               │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │                    Grafana                                            │   │
+│  │                    (Port 3000)                                       │   │
+│  │                                                                       │   │
+│  │  ┌────────────────────────────────────────────────────────────────┐  │   │
+│  │  │  Data Sources:                                                 │  │   │
+│  │  │  • Prometheus ────────────────┐                                 │  │   │
+│  │  │  • Loki ─────────────────────┼──┐                              │  │   │
+│  │  │  • Tempo (traces) ───────────┼──┼──┐                           │  │   │
+│  │  │  • Alertmanager ─────────────┼──┼──┼──┐                        │  │   │
+│  │  └──────────────────────────────┼──┼──┼──┼────────────────────────┘  │   │
+│  │                                 │  │  │  │                           │   │
+│  │  ┌──────────────────────────────▼──▼──▼──▼────────────────────────┐  │   │
+│  │  │  Dashboards & Panels                                          │  │   │
+│  │  │  • Metrics visualization                                      │  │   │
+│  │  │  • Log exploration                                            │  │   │
+│  │  │  • Alert visualization                                        │  │   │
+│  │  │  • Trace visualization                                        │  │   │
+│  │  └────────────────────────────────────────────────────────────────┘  │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+================================================================================
+                            DATA FLOW SUMMARY
+================================================================================
+
+METRICS FLOW:
+  Apps → Push Gateway → Prometheus ← Node Exporter
+                              ↓
+                        Alertmanager
+                              ↓
+                          Grafana
+
+LOGS FLOW:
+  Log Files → Promtail → Loki → Grafana
+
+TRACES FLOW (with Tempo):
+  Apps → Alloy → Tempo → Grafana
+
+================================================================================
+                            KEY INTERACTIONS
+================================================================================
+
+1. PROMETHEUS:
+   - PULLS metrics from: Node Exporter, Push Gateway, Alloy, App endpoints
+   - Uses Service Discovery to find targets
+   - PUSHES alerts to: Alertmanager
+   - Serves queries to: Grafana
+
+2. PROMTAIL:
+   - READS log files from filesystem
+   - PUSHES logs to: Loki
+   - Tracks position to avoid duplicates
+
+3. LOKI:
+   - RECEIVES logs via push API from Promtail
+   - STORES logs in chunks
+   - Serves queries to: Grafana
+
+4. ALERTMANAGER:
+   - RECEIVES alerts from: Prometheus
+   - ROUTES alerts to: Email, Slack, PagerDuty, etc.
+
+5. GRAFANA:
+   - QUERIES metrics from: Prometheus
+   - QUERIES logs from: Loki
+   - QUERIES traces from: Tempo
+   - DISPLAYS dashboards and visualizations
+
+6. ALLOY:
+   - RECEIVES telemetry from: Apps (OTLP)
+   - PROCESSES and forwards to: Prometheus, Loki, Tempo
+
+================================================================================
+
+
 Promethus : Time series db for query, storing data
 Amazon cloud watch : ?
 
@@ -3015,10 +3188,1698 @@ Best Practices:
     - Combine all three for full observability stack
     - Use Grafana to visualize data from all backends
 
+================================================================================
+
+STATIC LABELS IN PROMTAIL
 ═══════════════════════════════════════════════════════════════════════════════
+
+What are Static Labels?
+- Static labels are key-value pairs that are added to ALL log entries from a 
+  particular scrape configuration
+- They are defined in the `labels` section of a `static_configs` entry
+- These labels are applied at scrape time and remain constant for all logs 
+  collected by that configuration
+- They help identify the source, environment, or type of logs in Loki
+
+Configuration Structure:
+  scrape_configs:
+    - job_name: "system"
+      static_configs:
+        - targets:
+            - localhost
+          labels:
+            job: varlogs          # Static label
+            environment: prod     # Static label
+            host: server-01       # Static label
+            __path__: /var/log/*log  # Special label for file path
+
+Key Points:
+1. Static labels are applied to every log line from that scrape config
+2. They appear in Loki queries and can be used for filtering/logql queries
+3. Labels starting with `__` are internal/system labels (like `__path__`)
+4. Static labels are merged with any labels added by relabeling rules
+5. Labels are indexed in Loki, so use them for common filtering needs
+
+Common Static Labels:
+- job: Identifies the job/scrape config (e.g., "varlogs", "app-logs")
+- environment: Environment name (e.g., "prod", "staging", "dev")
+- host: Hostname or server identifier
+- service: Service or application name
+- team: Team responsible for the logs
+- region: Geographic or logical region
+
+Example Configuration:
+  scrape_configs:
+    - job_name: "application-logs"
+      static_configs:
+        - targets:
+            - localhost
+          labels:
+            job: myapp
+            environment: production
+            service: api-server
+            team: backend
+            region: us-east-1
+            __path__: /var/log/app/*.log
+    
+    - job_name: "system-logs"
+      static_configs:
+        - targets:
+            - localhost
+          labels:
+            job: system
+            environment: production
+            __path__: /var/log/syslog
+
+Using Static Labels in LogQL:
+- Query logs by static label: {job="myapp"}
+- Combine with other labels: {job="myapp", environment="production"}
+- Filter by multiple static labels: {service="api-server", team="backend"}
+
+Best Practices:
+1. Use meaningful label names that describe the log source
+2. Keep label cardinality low (avoid high-cardinality values like timestamps)
+3. Use consistent label names across different scrape configs
+4. Prefer static labels for values that don't change per log line
+5. Use relabeling for dynamic labels that need to be extracted from log content
+6. Avoid using too many static labels (Loki indexes all labels)
+
+Static Labels vs Dynamic Labels:
+- Static Labels: Defined in config, same for all logs in scrape config
+- Dynamic Labels: Extracted from log content using relabeling or pipeline stages
+- Static labels are more efficient for filtering in Loki queries
+
+Special Labels:
+- __path__: Required for file-based scraping, specifies file path pattern
+- __hostname__: Can be used to add hostname automatically
+- __job__: Automatically set to job_name if not explicitly defined
+============================================================================
+
+DYNAMIC LABELS USING PIPELINE_STAGES IN PROMTAIL
+═══════════════════════════════════════════════════════════════════════════════
+
+What are Pipeline Stages?
+- Pipeline stages are processing steps that transform log entries before sending 
+  them to Loki
+- They allow extraction of dynamic labels from log content (not just static values)
+- Each stage processes the log entry in sequence, modifying it as it passes through
+- Labels extracted via pipeline stages are added to the log entry and indexed in Loki
+
+Key Concept:
+- Static labels: Same for all logs in a scrape config (defined in static_configs)
+- Dynamic labels: Extracted from log content per log line (using pipeline_stages)
+- Dynamic labels allow filtering by values that vary between log entries
+
+Pipeline Stages Overview:
+1. docker: Parse Docker log format
+2. cri: Parse CRI (Container Runtime Interface) log format
+3. json: Parse JSON log entries
+4. regex: Extract values using regular expressions
+5. timestamp: Parse and set timestamp from log content
+6. labels: Add labels from extracted values
+7. output: Modify the log line output
+8. match: Conditionally apply stages based on filters
+9. template: Transform log entries using Go templates
+10. multiline: Combine multiple lines into single log entry
+11. drop: Drop log entries based on conditions
+12. limit: Rate limit log entries
+
+Common Pipeline Stages for Dynamic Labels:
+
+1. JSON PARSING STAGE:
+   Extracts fields from JSON log entries and converts them to labels
+   
+   Example:
+     pipeline_stages:
+       - json:
+           expressions:
+             level: level          # Extract 'level' field as 'level' label
+             user_id: user.id      # Extract nested 'user.id' as 'user_id' label
+             status_code: status   # Extract 'status' field as 'status_code' label
+       - labels:
+           level:                  # Convert extracted value to label
+           user_id:                # Convert extracted value to label
+           status_code:            # Convert extracted value to label
+   
+   Input log: {"level":"error","user":{"id":"12345"},"status":500}
+   Result: Labels added: level="error", user_id="12345", status_code="500"
+
+2. REGEX EXTRACTION STAGE:
+   Uses regular expressions to extract values from log lines
+   
+   Example:
+     pipeline_stages:
+       - regex:
+           expression: '.*level=(?P<level>\w+).*user_id=(?P<user_id>\d+).*'
+       - labels:
+           level:
+           user_id:
+   
+   Input log: "ERROR: level=error user_id=12345 request failed"
+   Result: Labels added: level="error", user_id="12345"
+   
+   Named capture groups become extracted values that can be converted to labels
+
+3. DOCKER LOG PARSING:
+   Parses Docker log format (includes timestamp and log level)
+   
+   Example:
+     pipeline_stages:
+       - docker: {}
+       - labels:
+           level:                  # Extract log level from Docker format
+
+4. CRI LOG PARSING:
+   Parses CRI (Container Runtime Interface) log format
+   
+   Example:
+     pipeline_stages:
+       - cri: {}
+       - labels:
+           level:
+
+5. TEMPLATE STAGE:
+   Uses Go templates to transform log entries and extract values
+   
+   Example:
+     pipeline_stages:
+       - template:
+           source: extracted
+           template: '{{ .level }}-{{ .service }}'
+           output: log_level_service
+       - labels:
+           log_level_service:
+
+6. MATCH STAGE (Conditional Processing):
+   Applies stages only when conditions are met
+   
+   Example:
+     pipeline_stages:
+       - match:
+           selector: '{job="api"}'
+           stages:
+             - json:
+                 expressions:
+                   endpoint: path
+             - labels:
+                 endpoint:
+       - match:
+           selector: '{job="system"}'
+           stages:
+             - regex:
+                 expression: 'ERROR: (?P<error_type>\w+)'
+             - labels:
+                 error_type:
+
+Complete Example Configuration:
+
+  scrape_configs:
+    - job_name: "application-logs"
+      static_configs:
+        - targets:
+            - localhost
+          labels:
+            job: myapp
+            environment: production
+            __path__: /var/log/app/*.log
+      pipeline_stages:
+        # Parse JSON logs
+        - json:
+            expressions:
+              level: level
+              service: service
+              trace_id: trace_id
+              user_id: user.id
+              status_code: status
+              method: method
+              path: path
+        
+        # Convert extracted JSON fields to labels
+        - labels:
+            level:                    # Log level (info, error, warn, debug)
+            service:                  # Service name
+            trace_id:                 # Distributed tracing ID
+            status_code:              # HTTP status code
+        
+        # Only add user_id label if it exists (avoid high cardinality)
+        - match:
+            selector: '{level="error"}'
+            stages:
+              - labels:
+                  user_id:            # Only label errors with user_id
+        
+        # Parse timestamp from log if present
+        - timestamp:
+            source: timestamp
+            format: RFC3339
+        
+        # Drop debug logs in production
+        - match:
+            selector: '{level="debug"}'
+            action: drop
+
+Alternative: Regex for Non-JSON Logs:
+
+  pipeline_stages:
+    # Extract from structured text logs
+    - regex:
+        expression: '^(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) \[(?P<level>\w+)\] (?P<message>.*)$'
+    - timestamp:
+        source: timestamp
+        format: '2006-01-02 15:04:05'
+    - labels:
+        level:
+
+Input: "2024-01-15 10:30:45 [ERROR] Database connection failed"
+Result: Labels: level="ERROR", timestamp parsed correctly
+
+Best Practices for Dynamic Labels:
+
+1. Keep Label Cardinality Low:
+   - Avoid extracting high-cardinality values (user IDs, request IDs) as labels
+   - Use them in log content instead, query with LogQL filters when needed
+   - Example: Don't label every unique user_id, only label on errors
+
+2. Use Match Stages for Conditional Labeling:
+   - Only extract labels when needed (e.g., error logs)
+   - Reduces label cardinality and improves performance
+
+3. Extract Common Filter Values:
+   - Good labels: level, service, environment, region
+   - Bad labels: timestamp, request_id, session_id (too many unique values)
+
+4. Combine Static and Dynamic Labels:
+   - Use static labels for constant values (environment, team)
+   - Use dynamic labels for values that vary per log (level, status_code)
+
+5. Validate Extracted Values:
+   - Use regex validation or drop invalid entries
+   - Prevents malformed labels in Loki
+
+6. Performance Considerations:
+   - Each pipeline stage adds processing overhead
+   - Order stages efficiently (parse first, then extract)
+   - Use match stages to skip unnecessary processing
+
+Example: High-Cardinality Anti-Pattern:
+
+  # BAD: Labels every unique request_id
+  pipeline_stages:
+    - json:
+        expressions:
+          request_id: request_id
+    - labels:
+        request_id:              # Creates thousands of label combinations!
+
+  # GOOD: Only label errors, keep request_id in log content
+  pipeline_stages:
+    - json:
+        expressions:
+          request_id: request_id
+          level: level
+    - match:
+        selector: '{level="error"}'
+        stages:
+          - labels:
+              level:             # Only label level, query request_id in LogQL
+
+Querying Dynamic Labels in LogQL:
+- Query by dynamic label: {level="error"}
+- Combine static and dynamic: {job="myapp", level="error"}
+- Filter by multiple dynamic labels: {level="error", status_code="500"}
+- Use in aggregations: sum(count_over_time({level="error"}[5m]))
+
+Pipeline Stage Order Matters:
+1. Parse format first (json, regex, docker, cri)
+2. Extract values (expressions in json/regex)
+3. Convert to labels (labels stage)
+4. Transform/modify (template, output)
+5. Filter/drop (match, drop)
+
+Common Patterns:
+
+Pattern 1: JSON Application Logs
+  pipeline_stages:
+    - json:
+        expressions:
+          level: level
+          service: service
+    - labels:
+        level:
+        service:
+
+Pattern 2: Structured Text Logs
+  pipeline_stages:
+    - regex:
+        expression: '\[(?P<level>\w+)\].*service=(?P<service>\w+)'
+    - labels:
+        level:
+        service:
+
+Pattern 3: Conditional Error Labeling
+  pipeline_stages:
+    - json:
+        expressions:
+          level: level
+          error_type: error.type
+    - labels:
+        level:
+    - match:
+        selector: '{level="error"}'
+        stages:
+          - labels:
+              error_type:
+
+Pattern 4: Multi-line Logs
+  pipeline_stages:
+    - multiline:
+        firstline: '^\d{4}-\d{2}-\d{2}'
+        max_wait_time: 3s
+    - regex:
+        expression: '^(?P<timestamp>\d{4}-\d{2}-\d{2}).*\[(?P<level>\w+)\]'
+    - timestamp:
+        source: timestamp
+        format: '2006-01-02'
+    - labels:
+        level:
+═══════════════════════════════════════════════════════════════════════════════
+
+OPENTELEMETRY (OTEL)
+═══════════════════════════════════════════════════════════════════════════════
+
+What is OpenTelemetry?
+- OpenTelemetry is an open-source observability framework that provides a 
+  unified set of APIs, SDKs, and tools for collecting telemetry data
+- It standardizes how applications generate and export metrics, logs, and traces
+- Vendor-neutral: Works with any observability backend (Prometheus, Grafana, 
+  Datadog, New Relic, etc.)
+- Part of Cloud Native Computing Foundation (CNCF)
+- Replaces vendor-specific instrumentation with a single, standardized approach
+
+Core Components:
+1. APIs: Language-specific APIs for instrumentation
+2. SDKs: Language-specific implementations of the APIs
+3. Instrumentation Libraries: Auto-instrumentation for common frameworks
+4. Collector: Receives, processes, and exports telemetry data
+5. Exporters: Send data to various backends (OTLP, Prometheus, Jaeger, etc.)
+
+Three Pillars of Observability:
+1. Metrics: Numerical measurements over time (CPU, memory, request rate)
+2. Logs: Event records with timestamps and contextual information
+3. Traces: Request flows through distributed systems
+
+Use Cases:
+1. Distributed Tracing:
+   - Track requests across microservices
+   - Identify bottlenecks and latency issues
+   - Understand service dependencies
+   - Debug performance problems in complex architectures
+
+2. Application Metrics:
+   - Business metrics (orders, revenue, user actions)
+   - Application performance metrics (response times, error rates)
+   - Infrastructure metrics (CPU, memory, network)
+   - Custom application-specific metrics
+
+3. Log Correlation:
+   - Correlate logs with traces using trace IDs
+   - Add context to logs (user ID, request ID, trace ID)
+   - Unified logging across services
+
+4. Service Mesh Observability:
+   - Instrument service mesh (Istio, Linkerd) traffic
+   - Monitor inter-service communication
+   - Track service-to-service latency
+
+5. Cloud-Native Applications:
+   - Kubernetes-native observability
+   - Container and pod-level metrics
+   - Multi-cloud and hybrid deployments
+
+6. Full-Stack Observability:
+   - Frontend (browser) to backend (server) tracing
+   - Database query tracing
+   - Third-party API call tracking
+
+Installation Instructions:
+
+1. OpenTelemetry Collector:
+   # Using Docker
+   docker run -p 4317:4317 -p 4318:4318 \
+     -v $(pwd)/otel-collector-config.yaml:/etc/otelcol/config.yaml \
+     otel/opentelemetry-collector:latest
+
+   # Using Homebrew (macOS)
+   brew install opentelemetry-collector
+
+   # Download binary
+   wget https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v0.91.0/otelcol_0.91.0_darwin_amd64.tar.gz
+   tar -xzf otelcol_0.91.0_darwin_amd64.tar.gz
+   ./otelcol --config=config.yaml
+
+2. Language-Specific SDKs:
+
+   Python:
+     pip install opentelemetry-api
+     pip install opentelemetry-sdk
+     pip install opentelemetry-instrumentation
+     pip install opentelemetry-exporter-otlp
+
+   Node.js/JavaScript:
+     npm install @opentelemetry/api
+     npm install @opentelemetry/sdk-node
+     npm install @opentelemetry/instrumentation
+
+   Java:
+     <!-- Maven -->
+     <dependency>
+       <groupId>io.opentelemetry</groupId>
+       <artifactId>opentelemetry-api</artifactId>
+       <version>1.32.0</version>
+     </dependency>
+
+   Go:
+     go get go.opentelemetry.io/otel
+     go get go.opentelemetry.io/otel/sdk
+     go get go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc
+
+   .NET/C#:
+     dotnet add package OpenTelemetry
+     dotnet add package OpenTelemetry.Exporter.Console
+     dotnet add package OpenTelemetry.Exporter.OTLP
+
+3. Auto-Instrumentation:
+   # Python auto-instrumentation
+   pip install opentelemetry-instrumentation
+   opentelemetry-instrument --traces_exporter otlp \
+     --metrics_exporter otlp \
+     python app.py
+
+   # Java auto-instrumentation
+   java -javaagent:opentelemetry-javaagent.jar \
+     -Dotel.service.name=my-service \
+     -Dotel.traces.exporter=otlp \
+     -jar app.jar
+
+OPENTELEMETRY COLLECTOR
+═══════════════════════════════════════════════════════════════════════════════
+
+What is the OpenTelemetry Collector?
+- A vendor-neutral agent that receives, processes, and exports telemetry data
+- Acts as a proxy between applications and observability backends
+- Handles data transformation, filtering, batching, and routing
+- Can be deployed as a sidecar, daemonset, or standalone service
+
+Collector Architecture:
+  Application → OTLP → Collector → [Processors] → Exporters → Backend
+                    (Receivers)    (Processors)   (Exporters)
+
+Components:
+1. Receivers: Receive telemetry data from various sources
+2. Processors: Transform, filter, and batch data
+3. Exporters: Send data to various backends
+4. Extensions: Provide additional functionality (health checks, pprof)
+
+Collector Types:
+1. Core Collector (otelcol):
+   - Minimal set of components
+   - Lightweight, production-ready
+   - Recommended for most use cases
+
+2. Contrib Collector (otelcol-contrib):
+   - Extended set of components
+   - Includes community-contributed receivers, processors, exporters
+   - More features but larger binary
+
+3. Distribution Builds:
+   - Custom builds with specific components
+   - Smaller binaries for specific use cases
+   - Example: otelcol-loki (only Loki-related components)
+
+Deployment Modes:
+1. Agent Mode (Sidecar/DaemonSet):
+   - Runs alongside applications
+   - Receives data from local applications
+   - Processes and forwards to central collector
+   - Reduces network overhead
+
+2. Gateway Mode (Standalone):
+   - Centralized collector
+   - Receives from multiple agents/applications
+   - Processes and routes to backends
+   - Handles authentication, routing, transformation
+
+3. Hybrid Mode:
+   - Agent collectors → Gateway collector → Backends
+   - Best for large-scale deployments
+
+Basic Collector Configuration:
+
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+  
+  processors:
+    batch:
+      timeout: 1s
+      send_batch_size: 1024
+    memory_limiter:
+      limit_mib: 512
+    resource:
+      attributes:
+        - key: deployment.environment
+          value: production
+          action: upsert
+  
+  exporters:
+    otlp/prometheus:
+      endpoint: prometheus:9090
+      tls:
+        insecure: true
+    logging:
+      loglevel: debug
+  
+  service:
+    pipelines:
+      traces:
+        receivers: [otlp]
+        processors: [memory_limiter, batch]
+        exporters: [otlp/prometheus, logging]
+      metrics:
+        receivers: [otlp]
+        processors: [memory_limiter, batch]
+        exporters: [otlp/prometheus]
+      logs:
+        receivers: [otlp]
+        processors: [memory_limiter, batch]
+        exporters: [otlp/prometheus]
+
+Common Receivers:
+- otlp: OpenTelemetry Protocol (gRPC and HTTP)
+- prometheus: Scrape Prometheus metrics
+- jaeger: Receive Jaeger traces
+- zipkin: Receive Zipkin traces
+- filelog: Read logs from files
+- syslog: Receive syslog messages
+- kafka: Consume from Kafka topics
+- fluentforward: Receive Fluentd forward protocol
+
+Common Processors:
+- batch: Batch telemetry data before exporting
+- memory_limiter: Prevent out-of-memory conditions
+- resource: Add/modify resource attributes
+- attributes: Add/modify span/metric/log attributes
+- filter: Filter telemetry data based on conditions
+- transform: Transform data using OTTL (OpenTelemetry Transformation Language)
+- sampling: Sample traces based on conditions
+- tail_sampling: Sample traces based on tail conditions
+- span: Modify spans (rename, add attributes)
+- metricstransform: Transform metrics
+
+OPENTELEMETRY EXPORTERS
+═══════════════════════════════════════════════════════════════════════════════
+
+What are Exporters?
+- Exporters send telemetry data from applications or collectors to backends
+- Available in both SDKs (application-level) and Collector (agent-level)
+- Each exporter handles a specific protocol or backend format
+
+Exporter Types:
+
+1. OTLP Exporter (Recommended):
+   - OpenTelemetry Protocol - the standard protocol
+   - Supports gRPC and HTTP/JSON
+   - Works with any OTLP-compatible backend
+   - Most flexible and future-proof option
+
+   Configuration (SDK):
+     from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+     from opentelemetry.sdk.trace.export import BatchSpanProcessor
+     
+     otlp_exporter = OTLPSpanExporter(
+         endpoint="http://collector:4317",
+         insecure=True
+     )
+     span_processor = BatchSpanProcessor(otlp_exporter)
+
+   Configuration (Collector):
+     exporters:
+       otlp/backend:
+         endpoint: backend:4317
+         tls:
+           insecure: false
+           cert_file: /path/to/cert.pem
+         headers:
+           api-key: "your-api-key"
+
+2. Prometheus Exporter:
+   - Exports metrics in Prometheus format
+   - Exposes /metrics endpoint for Prometheus scraping
+   - Only for metrics (not traces or logs)
+
+   Configuration (SDK):
+     from opentelemetry.exporter.prometheus import PrometheusMetricReader
+     from opentelemetry.sdk.metrics import MeterProvider
+     
+     prometheus_reader = PrometheusMetricReader(port=9090)
+     MeterProvider(metric_readers=[prometheus_reader])
+
+   Configuration (Collector):
+     exporters:
+       prometheus:
+         endpoint: "0.0.0.0:8889"
+         const_labels:
+           environment: production
+
+3. Jaeger Exporter:
+   - Exports traces to Jaeger backend
+   - Supports gRPC and HTTP/Thrift protocols
+   - Legacy but still widely used
+
+   Configuration (SDK):
+     from opentelemetry.exporter.jaeger.thrift import JaegerExporter
+     
+     jaeger_exporter = JaegerExporter(
+         agent_host_name="localhost",
+         agent_port=6831
+     )
+
+   Configuration (Collector):
+     exporters:
+       jaeger:
+         endpoint: jaeger:14250
+         tls:
+           insecure: true
+
+4. Zipkin Exporter:
+   - Exports traces to Zipkin backend
+   - HTTP/JSON format
+   - Simple and lightweight
+
+   Configuration (SDK):
+     from opentelemetry.exporter.zipkin.json import ZipkinExporter
+     
+     zipkin_exporter = ZipkinExporter(
+         endpoint="http://zipkin:9411/api/v2/spans"
+     )
+
+   Configuration (Collector):
+     exporters:
+       zipkin:
+         endpoint: http://zipkin:9411/api/v2/spans
+         format: json
+
+5. Console Exporter:
+   - Prints telemetry data to console/stdout
+   - Useful for debugging and development
+   - Not recommended for production
+
+   Configuration (SDK):
+     from opentelemetry.sdk.trace.export import ConsoleSpanExporter
+     
+     console_exporter = ConsoleSpanExporter()
+
+   Configuration (Collector):
+     exporters:
+       logging:
+         loglevel: debug
+         sampling_initial: 5
+         sampling_thereafter: 200
+
+6. Loki Exporter:
+   - Exports logs to Grafana Loki
+   - Supports both push and pull modes
+   - Part of Grafana ecosystem
+
+   Configuration (Collector):
+     exporters:
+       loki:
+         endpoint: http://loki:3100/loki/api/v1/push
+         labels:
+           resource:
+             service.name: "service_name"
+             service.namespace: "service_namespace"
+         tenant_id: "tenant1"
+
+7. Tempo Exporter:
+   - Exports traces to Grafana Tempo
+   - OTLP-compatible
+   - Part of Grafana ecosystem
+
+   Configuration (Collector):
+     exporters:
+       otlp/tempo:
+         endpoint: tempo:4317
+         tls:
+           insecure: true
+
+8. File Exporter:
+   - Writes telemetry data to files
+   - Useful for debugging and local development
+   - Can be used for backup/archival
+
+   Configuration (Collector):
+     exporters:
+       file:
+         path: /var/log/otel/traces.json
+         rotation:
+           max_megabytes: 100
+           max_days: 7
+
+9. Kafka Exporter:
+   - Exports to Kafka topics
+   - Useful for high-throughput scenarios
+   - Enables async processing
+
+   Configuration (Collector):
+     exporters:
+       kafka:
+         brokers:
+           - kafka:9092
+         topic: otel-traces
+         encoding: otlp_proto
+
+10. Datadog Exporter:
+    - Exports to Datadog backend
+    - Handles metrics, traces, and logs
+    - Commercial observability platform
+
+    Configuration (Collector):
+      exporters:
+        datadog:
+          api:
+            key: ${DD_API_KEY}
+            site: datadoghq.com
+
+11. New Relic Exporter:
+    - Exports to New Relic backend
+    - Commercial observability platform
+
+    Configuration (Collector):
+      exporters:
+        newrelic:
+          apikey: ${NEW_RELIC_API_KEY}
+          timeout: 30s
+
+12. Splunk Exporter:
+    - Exports to Splunk backend
+    - Supports HEC (HTTP Event Collector)
+
+    Configuration (Collector):
+      exporters:
+        splunk_hec:
+          endpoint: https://splunk:8088/services/collector
+          token: ${SPLUNK_TOKEN}
+
+Exporter Selection Guide:
+
+For Grafana Stack:
+  - Traces: OTLP exporter → Tempo
+  - Metrics: Prometheus exporter → Prometheus/Mimir
+  - Logs: Loki exporter → Loki
+
+For Cloud Providers:
+  - AWS: AWS X-Ray exporter or OTLP → CloudWatch
+  - GCP: Google Cloud Monitoring exporter
+  - Azure: Azure Monitor exporter
+
+For Open Source:
+  - OTLP exporter (most flexible)
+  - Prometheus exporter (metrics)
+  - Jaeger/Zipkin exporters (traces)
+
+Best Practices for Exporters:
+
+1. Use OTLP When Possible:
+   - Standard protocol, vendor-neutral
+   - Works with collector for routing
+   - Future-proof
+
+2. Batch Exports:
+   - Use batch processors to reduce overhead
+   - Configure appropriate batch sizes
+   - Balance between latency and throughput
+
+3. Error Handling:
+   - Implement retry logic
+   - Use circuit breakers
+   - Don't let export failures break application
+
+4. Authentication:
+   - Use TLS for secure connections
+   - Configure API keys/headers when required
+   - Store credentials securely (env vars, secrets)
+
+5. Performance:
+   - Use async/background export
+   - Monitor exporter performance
+   - Adjust batch sizes based on load
+
+6. Multiple Exporters:
+   - Export to multiple backends via collector
+   - Use collector for transformation
+   - Avoid exporting directly from applications
+
+Complete Example: Collector with Multiple Exporters
+
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+  
+  processors:
+    batch:
+      timeout: 1s
+      send_batch_size: 1024
+    memory_limiter:
+      limit_mib: 512
+    resource:
+      attributes:
+        - key: deployment.environment
+          value: production
+          action: upsert
+  
+  exporters:
+    # Export to Grafana Tempo
+    otlp/tempo:
+      endpoint: tempo:4317
+      tls:
+        insecure: true
+    
+    # Export to Prometheus
+    prometheus:
+      endpoint: "0.0.0.0:8889"
+      const_labels:
+        environment: production
+    
+    # Export to Loki
+    loki:
+      endpoint: http://loki:3100/loki/api/v1/push
+      labels:
+        resource:
+          service.name: "service_name"
+    
+    # Debug logging
+    logging:
+      loglevel: info
+  
+  service:
+    pipelines:
+      traces:
+        receivers: [otlp]
+        processors: [memory_limiter, batch]
+        exporters: [otlp/tempo, logging]
+      metrics:
+        receivers: [otlp]
+        processors: [memory_limiter, batch]
+        exporters: [prometheus, logging]
+      logs:
+        receivers: [otlp]
+        processors: [memory_limiter, batch]
+        exporters: [loki, logging]
+
+Best Practices:
+
+1. Instrumentation Strategy:
+   - Use auto-instrumentation when possible (less code, consistent)
+   - Add manual instrumentation for business logic and custom metrics
+   - Start with high-value services (user-facing, critical paths)
+   - Gradually expand to all services
+
+2. Sampling:
+   - Implement sampling for high-volume traces (head-based or tail-based)
+   - Sample 100% of errors, lower percentage of successful requests
+   - Use probabilistic sampling (e.g., 10% of requests)
+   - Example: Sample 100% errors, 10% successful requests
+
+3. Resource Attributes:
+   - Add consistent resource attributes (service.name, service.version)
+   - Include deployment environment (dev, staging, prod)
+   - Add infrastructure metadata (host, container, pod)
+   - Use semantic conventions for standard attributes
+
+4. Naming Conventions:
+   - Follow semantic conventions for spans and metrics
+   - Use consistent naming across services
+   - Example: http.method, http.status_code, db.operation
+
+5. Context Propagation:
+   - Ensure trace context propagates across service boundaries
+   - Use W3C Trace Context standard
+   - Propagate context in HTTP headers, gRPC metadata, message queues
+
+6. Performance Considerations:
+   - Use async/background export to avoid blocking application
+   - Batch telemetry data before exporting
+   - Set appropriate batch sizes and timeouts
+   - Monitor collector resource usage
+
+7. Error Handling:
+   - Don't let telemetry failures break your application
+   - Use circuit breakers for exporters
+   - Log telemetry errors separately
+   - Have fallback mechanisms
+
+8. Security:
+   - Encrypt telemetry data in transit (TLS)
+   - Use authentication for collector endpoints
+   - Sanitize sensitive data (PII, passwords) before export
+   - Use processors to redact sensitive information
+
+9. Cost Management:
+   - Use sampling to reduce data volume
+   - Filter unnecessary telemetry at the collector
+   - Use processors to drop low-value data
+   - Monitor telemetry data volume and costs
+
+10. Integration with Observability Stack:
+    - Use OTLP exporter for Grafana Tempo (traces)
+    - Use Prometheus exporter for metrics
+    - Use Loki exporter for logs
+    - Leverage OpenTelemetry Collector for routing
+
+Common Patterns:
+
+Pattern 1: Simple Application Instrumentation
+  from opentelemetry import trace
+  from opentelemetry.sdk.trace import TracerProvider
+  from opentelemetry.sdk.trace.export import ConsoleSpanExporter, BatchSpanProcessor
+  
+  trace.set_tracer_provider(TracerProvider())
+  tracer = trace.get_tracer(__name__)
+  
+  with tracer.start_as_current_span("my_operation"):
+      # Your code here
+      pass
+
+Pattern 2: Distributed Tracing
+  # Service A calls Service B
+  with tracer.start_as_current_span("service_a_operation") as span:
+      headers = {}
+      trace.inject(headers)  # Inject trace context
+      response = requests.get("http://service-b/api", headers=headers)
+
+Pattern 3: Custom Metrics
+  from opentelemetry import metrics
+  from opentelemetry.sdk.metrics import MeterProvider
+  
+  meter = metrics.get_meter(__name__)
+  counter = meter.create_counter("requests_total")
+  counter.add(1, {"method": "GET", "status": "200"})
+
+Pattern 4: Log Correlation
+  import logging
+  from opentelemetry import trace
+  
+  logger = logging.getLogger(__name__)
+  span = trace.get_current_span()
+  trace_id = format(span.get_span_context().trace_id, '032x')
+  logger.info(f"Processing request [trace_id={trace_id}]")
+
+Integration with Grafana Stack:
+- Traces → Grafana Tempo (via OTLP)
+- Metrics → Prometheus/Mimir (via Prometheus exporter)
+- Logs → Loki (via Loki exporter)
+- Visualization → Grafana (unified dashboards)
+
+Key Benefits:
+1. Vendor Neutrality: Switch backends without code changes
+2. Standardization: Consistent instrumentation across languages
+3. Rich Context: Automatic context propagation
+4. Auto-Instrumentation: Minimal code changes required
+5. Community Support: Large ecosystem and active development
+6. Future-Proof: Industry standard for observability
+═══════════════════════════════════════════════════════════════════════════════
+
+PROMETHEUS REMOTE WRITE
+═══════════════════════════════════════════════════════════════════════════════
+
+What is Remote Write?
+- Remote write is a Prometheus feature that allows writing metrics to remote 
+  storage systems in real-time
+- Prometheus continuously sends collected metrics to remote endpoints via HTTP POST
+- Works alongside local storage (doesn't replace it, but can be used for long-term 
+  retention or backup)
+- Uses the Prometheus remote write protocol (protobuf over HTTP)
+
+Key Characteristics:
+- Asynchronous: Writes happen in background, doesn't block scraping
+- Reliable: Includes retry logic and queuing for failed writes
+- Efficient: Batches metrics before sending
+- Configurable: Multiple remote write endpoints can be configured
+- Supports relabeling: Can modify metrics before sending
+
+Why Use Remote Write?
+1. Long-Term Storage:
+   - Prometheus local storage is limited (typically 15-30 days)
+   - Remote write enables long-term retention (months/years)
+   - Store historical data in cost-effective storage
+
+2. Centralized Storage:
+   - Aggregate metrics from multiple Prometheus instances
+   - Single source of truth for metrics across environments
+   - Easier to query and analyze
+
+3. High Availability:
+   - Backup metrics to remote storage
+   - Recover from Prometheus instance failures
+   - Redundancy for critical metrics
+
+4. Scalability:
+   - Offload storage from Prometheus
+   - Use scalable storage backends (S3, object storage)
+   - Handle high-cardinality metrics
+
+5. Multi-Tenancy:
+   - Send metrics to different backends per tenant
+   - Isolate metrics by environment or team
+   - Route metrics based on labels
+
+How It Works:
+1. Prometheus collects metrics (scraping)
+2. Metrics are stored locally (TSDB)
+3. Remote write process batches metrics
+4. Batches are sent to remote endpoint via HTTP POST
+5. Remote storage receives and stores metrics
+6. Failed writes are queued and retried
+
+Architecture:
+  Prometheus → Local TSDB → Remote Write Queue → Remote Storage Backend
+                    ↓              ↓
+              (Scraping)    (Batching & Sending)
+
+Basic Configuration:
+
+  global:
+    scrape_interval: 15s
+  
+  remote_write:
+    - url: "https://remote-storage/api/v1/write"
+      queue_config:
+        max_samples_per_send: 1000
+        batch_send_deadline: 5s
+        max_retries: 3
+        min_backoff: 30ms
+        max_backoff: 100ms
+
+Configuration Options:
+
+1. URL (Required):
+   - Endpoint where metrics will be sent
+   - Must support Prometheus remote write protocol
+   - Example: "https://prometheus-remote-write:9090/api/v1/write"
+
+2. Queue Configuration:
+   remote_write:
+     - url: "https://remote-storage/api/v1/write"
+       queue_config:
+         max_samples_per_send: 1000    # Max samples per batch
+         batch_send_deadline: 5s       # Max time before sending batch
+         max_retries: 3                 # Retry attempts
+         min_backoff: 30ms              # Min delay between retries
+         max_backoff: 100ms             # Max delay between retries
+         capacity: 10000                # Queue capacity
+
+3. Write Relabeling:
+   remote_write:
+     - url: "https://remote-storage/api/v1/write"
+       write_relabel_configs:
+         - source_labels: [__name__]
+           regex: 'expensive_metric.*'
+           action: drop                 # Drop expensive metrics
+         - source_labels: [environment]
+           regex: 'dev'
+           action: drop                 # Don't send dev metrics
+         - source_labels: [job]
+           target_label: service        # Rename label
+
+4. Authentication:
+   remote_write:
+     - url: "https://remote-storage/api/v1/write"
+       basic_auth:
+         username: "prometheus"
+         password: "secret"
+       # OR
+       bearer_token: "token-here"
+       # OR
+       bearer_token_file: "/path/to/token"
+       # OR
+       oauth2:
+         client_id: "prometheus"
+         client_secret: "secret"
+         token_url: "https://auth-server/oauth/token"
+
+5. TLS Configuration:
+   remote_write:
+     - url: "https://remote-storage/api/v1/write"
+       tls_config:
+         ca_file: "/path/to/ca.crt"
+         cert_file: "/path/to/client.crt"
+         key_file: "/path/to/client.key"
+         insecure_skip_verify: false
+
+6. Multiple Remote Write Endpoints:
+   remote_write:
+     - url: "https://mimir/api/v1/write"
+       write_relabel_configs:
+         - source_labels: [environment]
+           regex: 'production'
+           action: keep
+   
+     - url: "https://thanos/api/v1/write"
+       write_relabel_configs:
+         - source_labels: [environment]
+           regex: 'staging'
+           action: keep
+
+Common Remote Write Backends:
+
+1. Prometheus Mimir:
+   - Long-term storage for Prometheus
+   - Horizontally scalable
+   - Multi-tenancy support
+   - Configuration:
+     remote_write:
+       - url: "http://mimir:9009/api/v1/push"
+         headers:
+           X-Scope-OrgID: "tenant-1"
+
+2. Grafana Cloud:
+   - Managed Prometheus service
+   - Configuration:
+     remote_write:
+       - url: "https://prometheus-prod-01-prod-us-central-0.grafana.net/api/prom/push"
+         basic_auth:
+           username: "your-username"
+           password: "your-api-key"
+
+3. Thanos:
+   - Long-term storage and query layer
+   - Configuration:
+     remote_write:
+       - url: "http://thanos-receive:10908/api/v1/receive"
+
+4. Cortex:
+   - Horizontally scalable Prometheus
+   - Configuration:
+     remote_write:
+       - url: "http://cortex:9009/api/v1/push"
+
+5. VictoriaMetrics:
+   - High-performance time series database
+   - Configuration:
+     remote_write:
+       - url: "http://victoriametrics:8428/api/v1/write"
+
+6. AWS Managed Service for Prometheus:
+   - AWS managed Prometheus service
+   - Configuration:
+     remote_write:
+       - url: "https://aps-workspaces.us-east-1.amazonaws.com/workspaces/ws-xxx/api/v1/remote_write"
+         sigv4:
+           region: us-east-1
+
+7. Google Cloud Monitoring:
+   - GCP managed monitoring
+   - Configuration:
+     remote_write:
+       - url: "https://monitoring.googleapis.com/v1/projects/PROJECT_ID/location/global/prometheus"
+         oauth2:
+           client_id: "client-id"
+           client_secret: "secret"
+           token_url: "https://oauth2.googleapis.com/token"
+
+Use Cases:
+
+1. Long-Term Retention:
+   - Store metrics for compliance (1+ years)
+   - Historical analysis and trending
+   - Cost-effective storage (S3, object storage)
+
+2. Multi-Prometheus Aggregation:
+   - Multiple Prometheus instances → Single storage
+   - Global view across regions/environments
+   - Centralized querying
+
+3. Backup and Disaster Recovery:
+   - Backup critical metrics
+   - Recover from Prometheus failures
+   - Redundancy for high availability
+
+4. Cost Optimization:
+   - Move old data to cheaper storage
+   - Keep hot data in Prometheus, cold data remote
+   - Reduce Prometheus storage requirements
+
+5. Multi-Tenancy:
+   - Route metrics by tenant/environment
+   - Isolate metrics per team
+   - Different retention per tenant
+
+6. Cloud Migration:
+   - Send metrics to cloud-managed services
+   - Hybrid cloud observability
+   - Multi-cloud strategies
+
+Best Practices:
+
+1. Queue Configuration:
+   - Set appropriate batch sizes (1000-2000 samples)
+   - Configure reasonable timeouts (5-10s)
+   - Balance between latency and throughput
+   - Monitor queue length and drops
+
+2. Relabeling:
+   - Drop unnecessary metrics before sending
+   - Reduce cardinality (drop high-cardinality labels)
+   - Rename labels for consistency
+   - Filter by environment/importance
+
+3. Authentication:
+   - Always use authentication (basic auth, bearer token, OAuth2)
+   - Use TLS for encrypted communication
+   - Rotate credentials regularly
+   - Store secrets securely
+
+4. Monitoring:
+   - Monitor remote write success rate
+   - Alert on write failures
+   - Track queue length and drops
+   - Monitor network bandwidth usage
+
+5. Error Handling:
+   - Configure appropriate retries
+   - Set reasonable backoff times
+   - Monitor and alert on persistent failures
+   - Have fallback mechanisms
+
+6. Performance:
+   - Use multiple remote write endpoints for load distribution
+   - Filter metrics to reduce volume
+   - Optimize batch sizes
+   - Monitor Prometheus resource usage
+
+7. Cost Management:
+   - Filter expensive metrics
+   - Use different retention per metric type
+   - Route to cost-appropriate storage
+   - Monitor data volume and costs
+
+Example: Complete Configuration
+
+  global:
+    scrape_interval: 15s
+    external_labels:
+      cluster: production
+      region: us-east-1
+  
+  remote_write:
+    # Production metrics to Mimir
+    - url: "http://mimir:9009/api/v1/push"
+      queue_config:
+        max_samples_per_send: 1000
+        batch_send_deadline: 5s
+        max_retries: 3
+        capacity: 10000
+      write_relabel_configs:
+        - source_labels: [__name__]
+          regex: 'go_.*|prometheus_.*'
+          action: drop
+        - source_labels: [environment]
+          regex: 'production'
+          action: keep
+      basic_auth:
+        username: "prometheus"
+        password_file: "/etc/prometheus/remote-write-password"
+    
+    # Backup to Thanos
+    - url: "http://thanos-receive:10908/api/v1/receive"
+      queue_config:
+        max_samples_per_send: 2000
+        batch_send_deadline: 10s
+      write_relabel_configs:
+        - source_labels: [__name__]
+          regex: 'critical_.*'
+          action: keep  # Only backup critical metrics
+
+Monitoring Remote Write:
+
+Key Metrics to Monitor:
+- prometheus_remote_storage_succeeded_samples_total
+- prometheus_remote_storage_failed_samples_total
+- prometheus_remote_storage_queue_samples_pending
+- prometheus_remote_storage_queue_samples_dropped_total
+- prometheus_remote_storage_sent_batch_duration_seconds
+
+Example Alert:
+  - alert: RemoteWriteFailures
+    expr: rate(prometheus_remote_storage_failed_samples_total[5m]) > 0
+    for: 5m
+    annotations:
+      summary: "Remote write failures detected"
+
+Troubleshooting:
+
+Common Issues:
+1. Authentication failures → Check credentials
+2. Network timeouts → Check connectivity and firewall
+3. Queue full → Increase capacity or reduce metric volume
+4. High latency → Optimize batch configuration
+5. Dropped samples → Check relabeling rules
+
+Debug Commands:
+  # Check remote write status
+  curl http://localhost:9090/api/v1/status/config
+  
+  # Check queue metrics
+  curl http://localhost:9090/api/v1/query?query=prometheus_remote_storage_queue_samples_pending
+
+Key Takeaways:
+✓ Remote write enables long-term storage and backup
+✓ Configure appropriate queue settings for your workload
+✓ Use relabeling to filter and reduce metric volume
+✓ Always use authentication and TLS
+✓ Monitor remote write health and performance
+✓ Multiple endpoints allow routing and redundancy
+✓ Remote write works alongside local storage (not replacement)
+
+═══════════════════════════════════════════════════════════════════════════════
+
+GRAFANA ALLOY - SUMMARY
+═══════════════════════════════════════════════════════════════════════════════
+
+What is Grafana Alloy?
+- Vendor-neutral, open-source observability agent
+- Successor to Grafana Agent, built on OpenTelemetry Collector framework
+- Collects and forwards metrics, logs, and traces to various backends
+- Uses River configuration language (declarative, type-safe)
+- Single binary for easy deployment and management
+
+Key Features:
+- Unified agent for metrics, logs, and traces
+- Component-based architecture (modular and extensible)
+- Supports multiple protocols (Prometheus, OTLP, Loki, etc.)
+- Service discovery for dynamic targets
+- Built-in relabeling and transformation
+- Multi-backend routing (send same data to multiple destinations)
+
+Core Capabilities:
+1. Metrics Collection:
+   - Scrape Prometheus metrics from applications
+   - Forward to Prometheus, Mimir, or other backends
+   - Service discovery (Kubernetes, Consul, AWS, etc.)
+   - Metrics relabeling and transformation
+
+2. Log Collection:
+   - Collect from files, syslog, journald, Docker
+   - Forward to Loki or other log systems
+   - Log parsing and transformation
+   - Multi-line log handling
+
+3. Distributed Tracing:
+   - Collect traces via OTLP, Jaeger, Zipkin
+   - Forward to Tempo or other trace backends
+   - Trace sampling and filtering
+   - Service map generation
+
+Use Cases:
+
+1. Unified Observability Agent:
+   - Single agent for all telemetry types (metrics, logs, traces)
+   - Reduces operational overhead
+   - Consistent configuration across environments
+   - Easier to manage than multiple agents
+
+2. Kubernetes Observability:
+   - Deploy as DaemonSet for node-level collection
+   - Use as sidecar for pod-level collection
+   - Automatic service discovery for pods/services
+   - Kubernetes label injection
+
+3. Multi-Backend Routing:
+   - Route same data to multiple backends simultaneously
+   - Different retention policies per backend
+   - Backup and redundancy strategies
+   - Multi-cloud observability
+
+4. Edge/Remote Monitoring:
+   - Deploy at edge locations
+   - Collect data from remote sites
+   - Forward to central observability stack
+   - Bandwidth optimization with filtering
+
+5. Prometheus Replacement/Enhancement:
+   - Can replace Prometheus for scraping
+   - Remote write to Prometheus/Mimir
+   - More flexible than Prometheus-only setup
+   - Better for multi-tenant scenarios
+
+6. Log Shipping Alternative:
+   - Alternative to Promtail for Loki
+   - More features than Promtail (multi-backend, transformation)
+   - Can handle metrics and traces too
+   - Better for complex routing needs
+
+7. OpenTelemetry Integration:
+   - Native OTLP support
+   - Works with OpenTelemetry Collector components
+   - Standard observability protocol
+   - Future-proof architecture
+
+Installation:
+
+# Using Homebrew (macOS)
+brew install grafana-alloy
+
+# Using Docker
+docker pull grafana/alloy:latest
+
+# Download binary
+wget https://github.com/grafana/alloy/releases/download/v1.0.0/alloy-1.0.0-darwin-amd64.tar.gz
+tar -xzf alloy-1.0.0-darwin-amd64.tar.gz
+./alloy --config.file=config.river
+
+# Kubernetes (using Helm)
+helm repo add grafana https://grafana.github.io/helm-charts
+helm install alloy grafana/alloy
+
+Basic Configuration Example (River):
+
+  // Prometheus metrics scraping
+  prometheus.scrape "app_metrics" {
+    targets = [
+      {
+        __address__ = "localhost:8080",
+        job = "myapp",
+      },
+    ]
+    forward_to = [prometheus.remote_write.mimir.receiver]
+  }
+
+  // Remote write to Mimir
+  prometheus.remote_write "mimir" {
+    endpoint {
+      url = "http://mimir:9009/api/v1/push"
+      basic_auth {
+        username = env("MIMIR_USERNAME")
+        password = env("MIMIR_PASSWORD")
+      }
+    }
+  }
+
+  // Log collection
+  loki.source.file "app_logs" {
+    targets = [
+      {
+        __path__ = "/var/log/app/*.log",
+        job = "myapp",
+      },
+    ]
+    forward_to = [loki.write.loki.receiver]
+  }
+
+  // Forward logs to Loki
+  loki.write "loki" {
+    endpoint {
+      url = "http://loki:3100/loki/api/v1/push"
+    }
+  }
+
+  // OTLP receiver for traces
+  otelcol.receiver.otlp "traces" {
+    grpc {
+      endpoint = "0.0.0.0:4317"
+    }
+    http {
+      endpoint = "0.0.0.0:4318"
+    }
+    output {
+      traces = [otelcol.exporter.otlp.tempo.input]
+    }
+  }
+
+  // Export traces to Tempo
+  otelcol.exporter.otlp "tempo" {
+    endpoint = "tempo:4317"
+    tls {
+      insecure = true
+    }
+  }
+
+Best Practices:
+
+1. Configuration Management:
+   ✓ Use River configuration files (not YAML)
+   ✓ Version control all Alloy configurations
+   ✓ Use environment variables for sensitive data
+   ✓ Modularize configurations for reusability
+   ✓ Use River modules for shared components
+
+2. Deployment Patterns:
+   ✓ Use DaemonSet for node-level collection in Kubernetes
+   ✓ Use sidecar pattern for application-specific collection
+   ✓ Deploy as systemd service on VMs
+   ✓ Use Docker Compose for local development
+   ✓ Consider resource limits in containerized environments
+
+3. Resource Management:
+   ✓ Set appropriate memory limits
+   ✓ Configure batch sizes for efficient processing
+   ✓ Use sampling for high-volume traces
+   ✓ Filter unnecessary data early in pipeline
+   ✓ Monitor Alloy's own metrics
+
+4. Security:
+   ✓ Use TLS for all backend connections
+   ✓ Store credentials in environment variables or secrets
+   ✓ Use authentication for all backends
+   ✓ Restrict network access (firewall rules)
+   ✓ Rotate credentials regularly
+
+5. Performance Optimization:
+   ✓ Batch data before sending to backends
+   ✓ Use relabeling to reduce cardinality
+   ✓ Filter data at source when possible
+   ✓ Configure appropriate scrape intervals
+   ✓ Monitor queue lengths and drops
+
+6. Service Discovery:
+   ✓ Use Kubernetes service discovery for dynamic targets
+   ✓ Leverage Consul, AWS, or file-based discovery
+   ✓ Configure appropriate refresh intervals
+   ✓ Handle discovery failures gracefully
+
+7. Error Handling:
+   ✓ Configure retry logic for failed writes
+   ✓ Monitor Alloy health endpoints
+   ✓ Set up alerts for collection failures
+   ✓ Use dead letter queues for failed data
+   ✓ Log errors for troubleshooting
+
+8. Multi-Backend Strategy:
+   ✓ Route critical data to multiple backends
+   ✓ Use different retention per backend
+   ✓ Filter data per backend (reduce costs)
+   ✓ Test failover scenarios
+
+9. Monitoring Alloy:
+   ✓ Expose Alloy's own metrics endpoint
+   ✓ Monitor collection success rates
+   ✓ Track queue lengths and drops
+   ✓ Alert on configuration errors
+   ✓ Monitor resource usage
+
+10. Migration from Grafana Agent:
+    ✓ Alloy uses River (not YAML like Agent)
+    ✓ Convert existing Agent configs to River
+    ✓ Test configurations in staging first
+    ✓ Gradual migration approach recommended
+    ✓ Alloy is backward compatible with Agent's functionality
+
+Alloy vs Other Tools:
+
+Alloy vs Promtail:
+- Alloy: Unified agent (metrics, logs, traces)
+- Promtail: Log-only shipper
+- Use Alloy when you need metrics/traces too
+- Use Promtail for simple log-only scenarios
+
+Alloy vs Prometheus:
+- Alloy: Agent/collector (scrapes and forwards)
+- Prometheus: Time-series database with query engine
+- Alloy can scrape and forward to Prometheus
+- Alloy doesn't replace Prometheus, complements it
+
+Alloy vs OpenTelemetry Collector:
+- Alloy: Built on OTel Collector framework
+- Similar capabilities, different config language
+- Alloy uses River, OTel Collector uses YAML
+- Alloy is Grafana-optimized
+
+Common Patterns:
+
+Pattern 1: Kubernetes DaemonSet
+  - Deploy Alloy as DaemonSet
+  - Scrape node-level metrics
+  - Collect container logs
+  - Forward to central backends
+
+Pattern 2: Application Sidecar
+  - Deploy Alloy as sidecar container
+  - Collect application-specific telemetry
+  - Forward to backends
+  - Isolated per application
+
+Pattern 3: Edge Collection
+  - Deploy Alloy at edge locations
+  - Collect local telemetry
+  - Forward to central stack
+  - Handle network failures gracefully
+
+Pattern 4: Multi-Tenant Routing
+  - Route data by tenant labels
+  - Different backends per tenant
+  - Isolated data pipelines
+  - Cost optimization per tenant
+
+Key Benefits:
+1. Unified Agent: Single agent for all telemetry types
+2. Vendor Neutral: Works with any backend
+3. Flexible: Component-based architecture
+4. Modern: Built on OpenTelemetry standards
+5. Efficient: Optimized for resource usage
+6. Scalable: Handles high-volume data
+7. Maintainable: River language is type-safe
+
+When to Use Alloy:
+✓ Need unified agent for metrics, logs, and traces
+✓ Want to replace multiple agents (Promtail, exporters)
+✓ Need flexible routing to multiple backends
+✓ Require advanced transformation capabilities
+✓ Building modern observability stack
+✓ Using Grafana ecosystem (Loki, Tempo, Mimir)
+
+When NOT to Use Alloy:
+✗ Simple log-only scenarios (Promtail is simpler)
+✗ Already have working Prometheus-only setup
+✗ Don't need traces or advanced features
+✗ Very resource-constrained environments
+✗ Prefer YAML over River configuration
+
+═══════════════════════════════════════════════════════════════════════════════
+
+
 
 Things to practice
   - Implement Side Car patern
+  - implement or configure these in AWS cloud both in EC2 and ECS , if there are any other managed services there  as well
   - Relabeling K8 values : https://www.youtube.com/watch?v=mXvuKAb6ZwY
   - Use Service discovery with AWS and file basesd Service discovery
   - Use All the available authentication techniques to secure all the components of Promethus (alert manager, exporter, UI, push gateway etc)
@@ -3028,7 +4889,17 @@ Things to practice
   - Enable to log distrubted tracing and how can we follow and log it 
   - Introduce chaos engineering with logs 
   - implement use grafana , loki, tempo , alloy . all on loki
-  - Create diagram with visual explanation 
+  - Create diagram with visual explanation for all component
+    - grafana
+    - Prometheus
+    - Loki
+    - Service discovery
+    - alert manager
+    - node exporters
+    - Alloy
+    - Promtail
+    - push gateway
+
 
 
 

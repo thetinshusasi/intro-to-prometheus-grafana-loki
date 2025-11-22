@@ -6,3 +6,4 @@
 /alertmanager-0.27.0.darwin-amd64.tar.gz
 /pushgateway/*
 /ShoeHub-mac-os-x64/*
+/loki/loki-data/*
