@@ -1,0 +1,41 @@
+mimir:
+  structuredConfig:
+    multitenancy_enabled: true
+
+    server:
+      http_listen_port: 9009
+      #grpc_listen_port: 9095
+
+    common:
+      storage:
+        backend: filesystem
+        filesystem:
+          dir: /Users/tinshusasi/Desktop/Tech/TestCode/Observability/intro-to-prometheus-grafana-loki/Mimir-bin/data/common
+
+    blocks_storage:
+      backend: filesystem
+      filesystem:
+        dir: /Users/tinshusasi/Desktop/Tech/TestCode/Observability/intro-to-prometheus-grafana-loki/Mimir-bin/data/blocks
+
+    ingester:
+      ring:
+        replication_factor: 1
+        kvstore:
+          store: memberlist
+
+ingester:
+  replicas: 2
+querier:
+  replicas: 2
+store_gateway:
+  replicas: 2
+compactor:
+  replicas: 2
+distributor:
+  replicas: 2
+query_frontend:
+  replicas: 2
+ruler:
+  replicas: 2
+alertmanager:
+  replicas: 2

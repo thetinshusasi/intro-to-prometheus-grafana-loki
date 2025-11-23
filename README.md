@@ -332,3 +332,31 @@ For production deployments:
 - Use distributed deployment mode for scalability
 - Configure proper resource limits in docker-compose
 - Set up monitoring for Loki itself
+
+## Mimir
+
+Mimir is a horizontally scalable, highly available, multi-tenant Prometheus-compatible long-term storage system.
+
+### Running Mimir
+
+**Start Mimir:**
+
+```bash
+cd Mimir-bin
+./Mimir -config.file=./config.yaml
+```
+
+This will start Mimir with the configuration file located at `Mimir-bin/config.yaml`.
+
+### Configuration
+
+The Mimir configuration file is located at:
+
+- `Mimir-bin/config.yaml` - Main Mimir configuration file
+
+The default configuration includes:
+
+- HTTP server on port `9000`
+- gRPC server on port `9002`
+- Filesystem-based storage backend
+- Single replication factor for ingester ring

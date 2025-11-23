@@ -4,7 +4,13 @@
 /alertmanager-0.27.0.darwin-amd64/*
 /alertmanager-0.27.0.darwin-amd64
 /alertmanager-0.27.0.darwin-amd64.tar.gz
-/pushgateway/*
+/pushgateway/*/**
 /ShoeHub-mac-os-x64/*
-/loki/loki-data/*
-/Microservices/*
+/loki/loki-data/*/** 
+/Microservices/*/**
+/Mimir-bin/*/**
+/pushgateway
+metrics-activity.log
+Mimir-bin/Mimir
+.DS_Store
+Microservices/.DS_Store

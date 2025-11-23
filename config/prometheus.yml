@@ -30,3 +30,6 @@ alerting:
     - static_configs:
         - targets:
             - localhost:9093
+
+remote_write:
+  - url: http://localhost:9000/api/v1/push

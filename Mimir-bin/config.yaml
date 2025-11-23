@@ -1,0 +1,20 @@
+multitenancy_enabled: false
+
+server:
+  http_listen_port: 9000
+  grpc_listen_port: 9002
+
+common:
+  storage:
+    backend: filesystem
+    filesystem:
+      dir: /Users/tinshusasi/Desktop/Tech/TestCode/Observability/intro-to-prometheus-grafana-loki/Mimir-bin/data/common
+
+blocks_storage:
+  backend: filesystem
+  filesystem:
+    dir: /Users/tinshusasi/Desktop/Tech/TestCode/Observability/intro-to-prometheus-grafana-loki/Mimir-bin/data/blocks
+
+ingester:
+  ring:
+    replication_factor: 1
